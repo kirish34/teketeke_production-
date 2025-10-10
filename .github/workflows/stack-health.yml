@@ -52,7 +52,9 @@ jobs:
         id: run
         env:
           BASE: ${{ inputs.base }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          # Provide a non-empty fallback so health-check doesn't exit early
+          # when repo secrets are not configured (e.g., on first run or forks).
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN || 'dummy-admin-token' }}
           APEX: ${{ inputs.check_domain && inputs.apex || '' }}
           WWW: ${{ inputs.check_domain && inputs.www || '' }}
         run: |
