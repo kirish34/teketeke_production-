@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>TekeTeke — Login</title>
+  <style>
+    :root{ --bg1:#0ea5e9; --bg2:#0369a1; --fg:#fff; --muted:rgba(255,255,255,.92); --card1:#38bdf8; --card2:#0284c7; --border:rgba(255,255,255,.28) }
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font:17px/1.6 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,sans-serif;background:linear-gradient(180deg,var(--bg1) 0%,var(--bg2) 100%);color:var(--fg);-webkit-font-smoothing:antialiased}
+    .wrap{max-width:480px;margin:0 auto;padding:28px}
+    h1{font-size:28px;margin:0 0 16px;font-weight:900;text-shadow:0 1px 1px rgba(0,0,0,.25)}
+    .panel{background:linear-gradient(180deg,var(--card1) 0%,var(--card2) 100%);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+    label{display:block;font-weight:800;margin:10px 0 6px}
+    input{width:100%;padding:12px 14px;border-radius:12px;border:2px solid var(--border);background:rgba(255,255,255,.10);color:#fff;outline:none}
+    input:focus{border-color:#fff; box-shadow:0 0 0 3px rgba(255,255,255,.15)}
+    button{width:100%;margin-top:14px;padding:12px 16px;border-radius:12px;border:2px solid var(--border);background:rgba(255,255,255,.14);color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+    button:hover{background:rgba(255,255,255,.18)}
+    .muted{color:var(--muted);font-weight:600}
+    .err{margin-top:10px;color:#fff;font-weight:800;display:none}
+    .tip{font-size:12px;margin-top:10px}
+    a{color:#fff}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Sign in</h1>
+    <div class="panel">
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required />
+
+        <button type="submit">Continue</button>
+        <div id="msg" class="err" role="alert"></div>
+        <div class="tip muted">After sign-in, we’ll send you to your dashboard based on your role.</div>
+      </form>
+    </div>
+    <p class="tip muted">Need to pick a dashboard manually? <a href="/auth/role-select.html">Role Selection</a></p>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // Map roles to dashboards per spec
+    function routeForRoles(roles) {
+  const set = new Set((roles || []).map(r => String(r || '').toUpperCase()));
+
+  // Core roles
+  if (set.has('SYSTEM_ADMIN')) return '/admin.html';
+  if (set.has('SACCO_ADMIN')) return '/sacco/admin.html';
+  if (set.has('SACCO_STAFF')) return '/sacco/sacco.html';
+  if (set.has('MATATU_OWNER')) return '/matatu/owner.html';
+  if (set.has('CONDUCTOR')) return '/conductor/console.html';
+
+  // Taxi synonyms
+  if (set.has('TAXI') || set.has('TAXY') || set.has('TAXI_ADMIN') || set.has('TAXY_ADMIN')) {
+    return '/taxy/taxy.html';
+  }
+
+  // BodaBoda synonyms
+  if (set.has('BODABODA') || set.has('BODA_BODA') || set.has('BODA') || set.has('BODA_ADMIN') || set.has('BODABODA_ADMIN')) {
+    return '/bodaboda/bodaboda.html';
+  }
+
+  // Fallback to role select
+  return '/auth/role-select.html';
+}
+
+    async function fetchMyRoles(token) {
+      try {
+        const r = await fetch('/api/my-roles', { headers: { 'Authorization': 'Bearer ' + token } });
+        if (!r.ok) throw new Error('roles fetch failed');
+        const j = await r.json();
+        // Prefer explicit roles array if present
+        if (Array.isArray(j.roles)) return j.roles;
+        if (j && j.data && Array.isArray(j.data.roles)) return j.data.roles;
+        // Fallback: derive from possible shapes used elsewhere
+        const data = j.data || {};
+        const saccos = Array.isArray(data.saccos) ? data.saccos : [];
+        const matatus = Array.isArray(data.matatus) ? data.matatus : [];
+        const out = [];
+        if (saccos.some(r => String(r.role||'').toUpperCase() === 'SACCO_ADMIN')) out.push('SACCO_ADMIN');
+        if (!out.length && saccos.length) out.push('SACCO_STAFF');
+        if (matatus.some(r => String(r.member_role||'').toUpperCase() === 'OWNER')) out.push('MATATU_OWNER');
+        if (matatus.some(r => String(r.member_role||'').toUpperCase() === 'CONDUCTOR')) out.push('CONDUCTOR');
+        return out;
+      } catch (_) {
+        return [];
+      }
+    }
+
+    // Ensure only one submit handler
+    const form = document.getElementById('loginForm');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const errEl = document.getElementById('err') || document.getElementById('msg');
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const btn = form.querySelector('button[type="submit"]');
+
+      if (!email || !password) {
+        if (errEl) { errEl.textContent = 'Email and password required'; errEl.style.display = 'block'; }
+        return;
+      }
+      const setBusy = (v) => {
+        if (!btn) return;
+        btn.disabled = !!v;
+        btn.setAttribute('aria-busy', v ? 'true' : 'false');
+        btn.textContent = v ? 'Signing in…' : 'Continue';
+      };
+      try {
+        setBusy(true);
+        const r = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password })
+        });
+        if (!r.ok) {
+          const t = await r.text().catch(() => '');
+          throw new Error(`login failed ${r.status}: ${t || r.statusText}`);
+        }
+        const data = await r.json();
+        const token = data.access_token || data.token || '';
+        if (!token) throw new Error('missing token in response');
+
+        // Persist token to required keys (and keep legacy for compatibility)
+        try {
+          localStorage.setItem('tt_root_token', token);
+          localStorage.setItem('tt_admin_token', token); // backward compatibility
+          localStorage.setItem('auth_token', token);     // for existing pages using Authorization
+        } catch {}
+
+        const roles = await fetchMyRoles(token);
+        let dest = '/auth/role-select.html';
+        if (Array.isArray(roles)) {
+          if (roles.length === 1) dest = routeForRoles(roles);
+          else if (roles.length === 0) dest = '/auth/role-select.html';
+          else dest = '/auth/role-select.html';
+        }
+
+        // Use replace to avoid back button returning to login
+        location.replace(dest);
+      } catch (err) {
+        console.error(err);
+        if (errEl) { errEl.textContent = (err && err.message) ? err.message : 'Login failed'; errEl.style.display = 'block'; }
+      } finally {
+        setBusy(false);
+      }
+    }, { once: true });
+  </script>
+</body>
+</html>
+

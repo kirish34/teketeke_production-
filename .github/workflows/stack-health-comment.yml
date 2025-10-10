@@ -1,0 +1,106 @@
+name: Stack Health (comment)
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  comment:
+    if: startsWith(github.event.comment.body, '/health ')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse inputs
+        run: |
+          BASE=$(echo "${{ github.event.comment.body }}" | awk '{print $2}')
+          STRICT=$(echo "${{ github.event.comment.body }}" | awk '{print $3}')
+          echo "BASE=$BASE" >> $GITHUB_ENV
+          echo "STRICT=$STRICT" >> $GITHUB_ENV
+      - name: Install deps
+        run: sudo apt-get update && sudo apt-get install -y jq dnsutils
+      - name: Run health-check
+        env:
+          BASE: ${{ env.BASE }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          bash scripts/health-check.sh | tee health.txt
+          echo "### Health Report for $BASE" >> $GITHUB_STEP_SUMMARY
+          sed -n '1,999p' health.txt >> $GITHUB_STEP_SUMMARY
+          if [ "${{ env.STRICT }}" = "strict" ] && grep -q '^FAIL |' health.txt; then
+            echo "Strict mode: failing due to FAIL lines."; exit 1
+          fi
+
+      - name: Post summary reply to triggering issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.payload.issue.number;
+            const bodyText = fs.readFileSync('health.txt', 'utf8');
+            await github.rest.issues.createComment({
+              owner, repo, issue_number,
+              body: [
+                '### Health Check Result',
+                '',
+                '```txt',
+                bodyText.length > 60000 ? (bodyText.slice(0, 60000) + '\n[truncated]') : bodyText,
+                '```'
+              ].join('\n')
+            });
+
+      - name: Open/close failure issue (like main workflow)
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          BASE: ${{ env.BASE }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const base = process.env.BASE;
+            const label = 'stack-health';
+            const title = `Stack Health FAIL: ${base}`;
+            const bodyText = fs.readFileSync('health.txt', 'utf8');
+            const hasFail = bodyText.split('\n').some(l => l.startsWith('FAIL |'));
+
+            // Ensure label
+            try { await github.rest.issues.getLabel({ owner, repo, name: label }); }
+            catch {
+              await github.rest.issues.createLabel({
+                owner, repo, name: label, color: 'd73a4a',
+                description: 'Automated health-check failures'
+              });
+            }
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: label, per_page: 100
+            });
+            const existing = issues.find(i => i.title === title);
+
+            if (hasFail) {
+              const commentBody = [
+                `New failing run for **${base}** at ${new Date().toISOString()}:`,
+                '',
+                '```txt',
+                bodyText.length > 60000 ? (bodyText.slice(0, 60000) + '\n[truncated]') : bodyText,
+                '```'
+              ].join('\n');
+              if (existing) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: commentBody });
+              } else {
+                await github.rest.issues.create({ owner, repo, title, labels: [label], body: commentBody });
+              }
+            } else if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Passing run for **${base}** at ${new Date().toISOString()}. Closing. ✅`
+              });
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: 'closed' });
+            }

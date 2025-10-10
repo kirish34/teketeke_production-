@@ -1,0 +1,80 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Job-level env (safe to reference secrets here)
+    env:
+      BASE_URL: ${{ secrets.TEKETEKE_BASE_URL }}
+      ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
+      # Seeder (talks directly to Supabase, not your app)
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      # Optional seed range tweaks
+      SEED_START: "110"
+      SEED_COUNT: "30"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Seed (optional; runs only if Supabase creds are present)
+        if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE != '' }}
+        run: |
+          echo "Seeding with range: ${SEED_START}-${SEED_COUNT}"
+          # replace with your real seeder if different:
+          node scripts/seed.js || echo "Seeder skipped/missing"
+
+      - name: Run E2E health script (fail on FAIL lines)`n        env:`n          BASE: ${{ env.BASE_URL }}`n          ADMIN_TOKEN: ${{ env.ADMIN_TOKEN }}`n        run: |`n          mkdir -p artifacts`n          bash scripts/health-check.sh | tee artifacts/health.txt`n          if grep -q '^FAIL \|' artifacts/health.txt; then`n            echo "::error::FAIL lines found in health.txt"`n            exit 1`n          fi
+
+      - name: Upload health artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-health
+          path: artifacts/health.txt
+
+      # ---- Email notification on failure (Zoho SMTP) ----
+      # Set these repository secrets first:
+      #   ZOHO_EMAIL           -> e.g. noreply@skyyalla.com
+      #   ZOHO_APP_PASSWORD    -> app-specific password from Zoho
+      #   EMAIL_TO             -> comma-separated recipients (you)
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.zoho.com
+          server_port: 587
+          secure: true
+          username: ${{ secrets.ZOHO_EMAIL }}
+          password: ${{ secrets.ZOHO_APP_PASSWORD }}
+          subject: "E2E failed: ${{ github.repository }} @ ${{ github.ref_name }}"
+          from: ${{ secrets.ZOHO_EMAIL }}
+          to: ${{ secrets.EMAIL_TO }}
+          content_type: text/plain
+          body: |
+            Workflow: ${{ github.workflow }}
+            Run:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit:   ${{ github.sha }}
+            Branch:   ${{ github.ref_name }}
+
+            The E2E job failed. Health output artifact: "e2e-health".
+
