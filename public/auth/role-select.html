@@ -5,71 +5,134 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>TekeTeke — Choose Role</title>
   <style>
-    :root{--bg:#f5f7fb;--panel:#fff;--brand:#1976d2;--ink:#0f172a;--muted:#6b7280;--border:#e5e7eb}
-    *{box-sizing:border-box} html,body{margin:0;padding:0}
+    :root{
+      --bg:#f5f7fb; --panel:#fff; --brand:#1976d2; --brand-700:#135ba1;
+      --ink:#0f172a; --muted:#6b7280; --border:#e5e7eb; --shadow:0 1px 8px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--ink)}
-    .wrap{max-width:860px;margin:0 auto;padding:28px}
-    h1{margin:0 0 12px;color:var(--brand)}
-    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:12px}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px}
-    .card h3{margin:0 0 8px}
-    .card p{margin:0 0 12px;color:var(--muted)}
-    .btn{display:inline-block;padding:10px 14px;border-radius:10px;background:var(--brand);color:#fff;text-decoration:none}
-    .top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:10px}
-    .muted{color:var(--muted)}
-    nav a{margin-right:8px}
+    a{color:inherit}
+
+    .wrap{max-width:980px;margin:0 auto;padding:28px}
+    header.top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+    h1{margin:0;color:var(--brand);font-size:24px}
+    nav a{margin-left:12px;text-decoration:none;color:var(--muted)}
+    nav a:hover{color:var(--brand)}
+
+    .intro{margin:6px 0 14px;color:var(--muted)}
+
+    .section{margin-top:16px}
+    .section h2{font-size:16px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+      gap:14px;
+    }
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:16px;
+      box-shadow:var(--shadow);
+      display:flex;flex-direction:column;gap:8px;min-height:170px
+    }
+    .card .title{display:flex;align-items:center;gap:8px}
+    .card .title .icon{font-size:20px}
+    .card h3{margin:0;font-size:16px}
+    .card p{margin:0;color:var(--muted);line-height:1.4;min-height:40px}
+    .btn{
+      margin-top:auto;
+      display:inline-block;
+      padding:10px 14px;
+      border-radius:10px;
+      background:var(--brand);
+      color:#fff;
+      text-decoration:none;
+      text-align:center;
+      outline:none;
+    }
+    .btn:hover{background:var(--brand-700)}
+    .btn:focus{box-shadow:0 0 0 3px rgba(25,118,210,.25)}
+
+    @media (max-width:540px){ nav{display:none} }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="top">
+    <header class="top">
       <h1>Choose your role</h1>
-      <nav>
+      <nav aria-label="Utility">
         <a href="/">Home</a>
-        <a href="/auth/login.html" class="muted">Login</a>
-        <a href="/auth/logout.html" class="muted">Logout</a>
+        <a href="/auth/login.html">Login</a>
+        <a href="/auth/logout.html">Logout</a>
       </nav>
-    </div>
-    <p class="muted">Pick a role to continue. (This links directly to the intended dashboard without changing any dashboard code.)</p>
-    <div class="grid">
-      <div class="card">
-        <h3>SACCO Admin</h3>
-        <p>Manage matatus, fees, loans, staff.</p>
-        <a class="btn" href="/sacco/admin.html">Open Dashboard</a>
-      </div>
-      <div class="card">
-        <h3>SACCO Staff</h3>
-        <p>Daily fee tracking and confirmations.</p>
-        <a class="btn" href="/sacco/staff.html">Open Dashboard</a>
-      </div>
-      <div class="card">
-        <h3>Matatu Owner</h3>
-        <p>View balances, loans, repayments.</p>
-        <a class="btn" href="/matatu/owner.html">Open Dashboard</a>
-      </div>
-      <div class="card">
-        <h3>Conductor</h3>
-        <p>Operational view for daily routes.</p>
-        <a class="btn" href="/conductor/console.html">Open Dashboard</a>
-      </div>
-      <div class="card">
-        <h3>System Admin</h3>
-        <p>Global system admin controls.</p>
-        <a class="btn" href="/admin.html">Open Dashboard</a>
-      
-      <div class="card">
-        <h3>Taxi</h3>
-        <p>Taxi operations dashboard.</p>
-        <a class="btn" href="/taxy/taxy.html">Open Dashboard</a>
-      </div>
-      <div class="card">
-        <h3>BodaBoda</h3>
-        <p>Two-wheel operations dashboard.</p>
-        <a class="btn" href="/bodaboda/bodaboda.html">Open Dashboard</a>
-      </div>
+    </header>
 
-</div>
-    </div>
+    <p class="intro">Pick a role to continue. These links jump straight to each dashboard.</p>
+
+    <!-- System -->
+    <section class="section" aria-labelledby="sec-system">
+      <h2 id="sec-system">System</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🛠️</span><h3>System Admin</h3></div>
+          <p>Global system controls and configuration.</p>
+          <a class="btn" href="/admin.html" role="button" aria-label="Open System Admin dashboard">Open Dashboard</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- SACCO -->
+    <section class="section" aria-labelledby="sec-sacco">
+      <h2 id="sec-sacco">SACCO</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🏢</span><h3>SACCO Admin</h3></div>
+          <p>Manage fleet, fees, loans, and staff.</p>
+          <a class="btn" href="/sacco/admin.html" role="button" aria-label="Open SACCO Admin dashboard">Open Dashboard</a>
+        </article>
+
+        <article class="card">
+          <div class="title"><span class="icon">👥</span><h3>SACCO Staff</h3></div>
+          <p>Day-to-day fee tracking and confirmations.</p>
+          <a class="btn" href="/sacco/staff.html" role="button" aria-label="Open SACCO Staff dashboard">Open Dashboard</a>
+        </article>
+      </div>
+    </section>
+
+    <!-- Operators -->
+    <section class="section" aria-labelledby="sec-operators">
+      <h2 id="sec-operators">Operators</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🚌</span><h3>Matatu Owner</h3></div>
+          <p>View balances, loans, repayments.</p>
+          <a class="btn" href="/matatu/owner.html" role="button" aria-label="Open Matatu Owner dashboard">Open Dashboard</a>
+        </article>
+
+        <!-- Renamed & link updated -->
+        <article class="card">
+          <div class="title"><span class="icon">🧑‍💼</span><h3>Matatu Staff</h3></div>
+          <p>Operational console for daily routes.</p>
+          <a class="btn" href="/matatu/staff.html" role="button" aria-label="Open Matatu Staff console">Open Dashboard</a>
+        </article>
+
+        <article class="card">
+          <div class="title"><span class="icon">🚕</span><h3>Taxi</h3></div>
+          <p>Taxi operations dashboard.</p>
+          <!-- Change this href if your path is /taxi/ -->
+          <a class="btn" href="/taxy/taxy.html" role="button" aria-label="Open Taxi dashboard">Open Dashboard</a>
+        </article>
+
+        <article class="card">
+          <div class="title"><span class="icon">🏍️</span><h3>Boda Boda</h3></div>
+          <p>Two-wheel operations dashboard.</p>
+          <a class="btn" href="/bodaboda/bodaboda.html" role="button" aria-label="Open Boda Boda dashboard">Open Dashboard</a>
+        </article>
+      </div>
+    </section>
   </div>
 </body>
 </html>

@@ -10,16 +10,18 @@
   <style>
     :root{
       --brand:#1976d2; --brand-700:#135ba1; --bg:#f5f7fb; --panel:#fff;
-      --text:#0b0f19; --muted:#6b7280; --border:#e5e7eb; --ok:#065f46;
+      --text:#0b0f19; --muted:#6b7280; --border:#e5e7eb; --ok:#065f46; --bad:#b91c1c;
     }
     *{box-sizing:border-box}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text);margin:0;padding:20px}
     h2{color:var(--brand);margin:0 0 12px}
-    .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     select,input,button{padding:10px;border:1px solid var(--border);border-radius:8px}
     button{background:var(--brand);color:#fff;border:none;cursor:pointer}
     button.ghost{background:#fff;color:var(--brand)}
-    .tabs{display:flex;gap:8px;margin:8px 0 16px}
+    button.bad{background:var(--bad)}
+    button.ok{background:var(--ok)}
+    .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .tabs{display:flex;gap:8px;margin:8px 0 16px;flex-wrap:wrap}
     .tab{padding:10px 14px;background:var(--brand);color:#fff;border-radius:8px;cursor:pointer}
     .tab.active{background:var(--brand-700)}
     .panel{display:none;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:0 2px 8px rgba(0,0,0,.04)}
@@ -30,10 +32,13 @@
     .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:12px}
     .k{color:var(--muted);font-size:12px}
     .v{font-weight:700;font-size:20px}
-    table{width:100%;border-collapse:collapse;margin-top:10px}
-    th,td{padding:10px;border:1px solid var(--border);text-align:left}
+    table{width:100%;border-collapse:collapse;margin-top:10px;background:#fff}
+    th,td{padding:10px;border:1px solid var(--border);text-align:left;vertical-align:top}
     th{background:var(--brand);color:#fff}
     .mono{font-family:ui-monospace,Consolas,monospace}
+    .table-wrap{max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:#fff}
+    .note{margin-top:8px;background:#fef3c7;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px}
+    #log{background:#0b1020;color:#cfe3ff;border-radius:8px;padding:10px;max-height:200px;overflow:auto}
   </style>
 </head>
 <body>
@@ -54,9 +59,11 @@
     <div class="tab active" data-panel="p_matatus">Matatus</div>
     <div class="tab" data-panel="p_summary">Collections</div>
     <div class="tab" data-panel="p_tx">Transactions</div>
-    <!-- NEW: Savings + Loans tabs -->
     <div class="tab" data-panel="p_savings">Savings</div>
     <div class="tab" data-panel="p_loans">Loans</div>
+    <!-- NEW STAFF TABS -->
+    <div class="tab" data-panel="p_sacco_staff">SACCO Staff</div>
+    <div class="tab" data-panel="p_matatu_staff">Matatu Staff</div>
   </div>
 
   <!-- Matatus -->
@@ -66,14 +73,16 @@
       <button class="ghost" id="reloadMatatus">Reload</button>
       <span class="right k" id="matatuCount"></span>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Plate</th><th>Owner</th><th>Phone</th><th>Type</th><th>TLB</th><th>Till</th><th>ID</th>
-        </tr>
-      </thead>
-      <tbody id="matatuTbody"></tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Plate</th><th>Owner</th><th>Phone</th><th>Type</th><th>TLB</th><th>Till</th><th>ID</th>
+          </tr>
+        </thead>
+        <tbody id="matatuTbody"></tbody>
+      </table>
+    </div>
   </section>
 
   <!-- Collections (totals + chart) -->
@@ -105,17 +114,19 @@
       <button id="exportTx">Export CSV</button>
       <span class="right k" id="txCount"></span>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Time</th><th>Matatu</th><th>MSISDN</th><th>Fare</th><th>Service Fee</th><th>Status</th><th>ID</th>
-        </tr>
-      </thead>
-      <tbody id="txTbody"></tbody>
-    </table>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th><th>Matatu</th><th>MSISDN</th><th>Fare</th><th>Service Fee</th><th>Status</th><th>ID</th>
+          </tr>
+        </thead>
+        <tbody id="txTbody"></tbody>
+      </table>
+    </div>
   </section>
 
-  <!-- NEW: Savings tab (totals + chart from /summary) -->
+  <!-- Savings -->
   <section id="p_savings" class="panel">
     <div class="grid">
       <div class="card"><div class="k">Total Savings (range)</div><div class="v" id="sav_total">0</div></div>
@@ -125,10 +136,10 @@
     <div class="card" style="margin-top:16px">
       <canvas id="savingsChart" height="120"></canvas>
     </div>
-    <p class="k" style="margin-top:8px">Note: this uses the same totals as Collections. For a per-day breakdown from the server, I can add <span class="mono">/api/sacco/:id/summary/daily</span>.</p>
+    <p class="k" style="margin-top:8px">Note: this uses the same totals as Collections. For a per-day breakdown from the server, we can add <span class="mono">/api/sacco/:id/summary/daily</span>.</p>
   </section>
 
-  <!-- NEW: Loans tab (totals + chart from /summary) -->
+  <!-- Loans -->
   <section id="p_loans" class="panel">
     <div class="grid">
       <div class="card"><div class="k">Total Loan Repay (range)</div><div class="v" id="loan_total">0</div></div>
@@ -140,20 +151,102 @@
     </div>
   </section>
 
+  <!-- NEW: SACCO STAFF -->
+  <section id="p_sacco_staff" class="panel">
+    <h3 style="margin:0 0 8px">SACCO Staff Management</h3>
+    <div class="note">Selected SACCO: <span class="mono" id="ss_sacco_lbl">—</span></div>
+
+    <div class="row" style="margin-top:10px">
+      <input id="ss_email" placeholder="user@example.com" style="min-width:260px" />
+      <select id="ss_role">
+        <option value="SACCO_STAFF">SACCO_STAFF</option>
+        <option value="SACCO_ADMIN">SACCO_ADMIN</option>
+      </select>
+      <button class="ok" id="ss_add">Add Staff</button>
+      <button class="ghost" id="ss_reload">Reload</button>
+      <button id="ss_export">Export CSV</button>
+      <span class="right k" id="ss_count"></span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>User</th><th>Role</th><th>Joined</th><th class="mono">User ID</th><th width="120"></th></tr></thead>
+        <tbody id="ss_tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- NEW: MATATU STAFF (from SACCO perspective) -->
+  <section id="p_matatu_staff" class="panel">
+    <h3 style="margin:0 0 8px">Matatu Staff Management</h3>
+    <div class="row">
+      <input id="ms_plate" placeholder="Find Matatu by Plate e.g. KDA123A" style="min-width:260px" />
+      <button id="ms_find">Find</button>
+      <span class="k" id="ms_found">—</span>
+      <button class="ghost" id="ms_reload" style="margin-left:auto">Reload Staff</button>
+      <button id="ms_export">Export CSV</button>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <input id="ms_email" placeholder="user@example.com" style="min-width:260px" />
+      <select id="ms_role">
+        <option value="DRIVER">DRIVER</option>
+        <option value="MATATU_STAFF">MATATU_STAFF</option>
+      </select>
+      <button class="ok" id="ms_add">Add Staff</button>
+    </div>
+
+    <div class="table-wrap" style="margin-top:10px">
+      <table>
+        <thead><tr><th>User</th><th>Role</th><th>Joined</th><th class="mono">User ID</th><th width="120"></th></tr></thead>
+        <tbody id="ms_tbody"></tbody>
+      </table>
+    </div>
+    <div class="note">If RPCs aren’t available, this falls back to <span class="mono">/u/matatu/{id}/staff</span> add/list/remove routes.</div>
+  </section>
+
 <script>
-// Migrated to /u/* authenticated endpoints with TT.jget; falls back to admin lists when only root token is present.
 (function(){
+  // Auth guards
   if (typeof ensureAuthOrRoot === 'function') ensureAuthOrRoot();
   if (typeof protectAny === 'function') {
     protectAny(['SACCO_ADMIN','SACCO_STAFF']);
   } else if (typeof protect === 'function') {
     protect('SACCO_STAFF');
   }
+
   // ---------- utils ----------
   const $ = id => document.getElementById(id);
   const fmt = n => Number(n||0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const todayISO = () => new Date().toISOString().slice(0,10);
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+  const auth = ()=> (window.TT && TT.getAuth && TT.getAuth()) || '';
+
+  // tiny fetch helpers (bearer-aware)
+  async function handle(r){
+    const t = await r.text();
+    let j = {};
+    try{ j = t ? JSON.parse(t) : {}; }catch{ j = { error: t || r.statusText }; }
+    if (!r.ok) throw new Error(j.error || j.message || r.statusText || 'Request failed');
+    return j;
+  }
+  async function jget(path){
+    // prefer TT.jget when available (handles base, token etc.)
+    if (window.TT && typeof TT.jget==='function') return TT.jget(path);
+    const r = await fetch(path, { headers: { 'Authorization': 'Bearer '+auth() }});
+    return handle(r);
+  }
+  async function jpost(path, body){
+    const r = await fetch(path, {
+      method:'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':'Bearer '+auth() },
+      body: JSON.stringify(body||{})
+    });
+    return handle(r);
+  }
+  async function jrpc(fn, args){
+    return jpost('/rpc/'+fn, args||{});
+  }
 
   // ---------- tabs ----------
   document.querySelectorAll('.tab').forEach(t=>{
@@ -172,29 +265,17 @@
   // ---------- state ----------
   let currentSacco = null;
   let chartSummary, chartSavings, chartLoans;
-  let cachedTotals = null; // keep the last /summary result
+  let cachedTotals = null;
 
-  // bearer-aware GET via TT helper
-  async function jget(path){ return TT.jget(path); }
-
-  // auth presence and base for endpoints
-  const hasAuth = !!(TT.getAuth && TT.getAuth());
-  const hasRoot = !!(TT.getRoot && TT.getRoot());
-  const baseU = hasAuth ? '/u' : '/api';
+  // choose base for user routes (auth vs fallback)
+  const baseU = '/u'; // this dashboard is for authenticated SACCO roles
 
   // ---------- load sacco list ----------
   async function loadSaccos(){
     const sel = $('saccoSelect');
     sel.innerHTML = '<option value="">— choose —</option>';
-    let items = [];
-    if (hasAuth) {
-      const res = await jget('/u/my-saccos');
-      const arr = res.items || res.data || res || [];
-      items = arr.map(x => ({ id: x.sacco_id, name: x.name || x.sacco_name || x.sacco_id }));
-    } else if (hasRoot) {
-      const res = await jget('/api/admin/saccos?limit=200');
-      items = res.items || res.data || [];
-    }
+    const res = await jget('/u/my-saccos'); // expects items [{sacco_id, name}]
+    const items = (res.items||res.data||[]).map(x=>({ id: x.sacco_id, name: x.name || x.sacco_name || x.sacco_id }));
     items.forEach(s=>{
       const o=document.createElement('option');
       o.value=s.id; o.textContent=s.name || s.id; sel.appendChild(o);
@@ -224,10 +305,9 @@
     $('matatuCount').textContent = `${rows.length} matatu(s)`;
   }
 
-  // ---------- helper: date list + even-split series (placeholder until daily endpoint exists) ----------
+  // ---------- helper: date list + even-split series (until daily endpoint exists) ----------
   function enumerateDays(a,b){
-    const out=[]; let d=new Date(a+"T00:00:00");
-    const end = new Date(b+"T00:00:00");
+    const out=[]; let d=new Date(a+"T00:00:00"); const end = new Date(b+"T00:00:00");
     while (d <= end){ out.push(d.toISOString().slice(0,10)); d.setDate(d.getDate()+1); }
     return out;
   }
@@ -241,39 +321,31 @@
     cachedTotals = res.totals || {};
     const t = cachedTotals;
 
-    // Cards (Collections panel)
     $('sum_fare').textContent = fmt(t.FARE||0);
     $('sum_savings').textContent = fmt(t.SAVINGS||0);
     $('sum_loan').textContent = fmt(t.LOAN_REPAY||0);
     $('sum_sacco').textContent = fmt(t.SACCO_FEE||0);
 
     const days = enumerateDays(from, to);
-    // Collections chart → plot SACCO_FEE
-    renderChart('summaryChart', 'SACCO Fee (KES)', days, evenSeries(t.SACCO_FEE||0, days.length), (c)=> chartSummary=c);
-
-    // Savings panel
+    renderChart('summaryChart', 'SACCO Fee (KES)', days, evenSeries(t.SACCO_FEE||0, days.length));
     $('sav_total').textContent = fmt(t.SAVINGS||0);
     $('sav_days').textContent = days.length;
     $('sav_avg').textContent = fmt((t.SAVINGS||0)/Math.max(1,days.length));
-    renderChart('savingsChart', 'Savings (KES)', days, evenSeries(t.SAVINGS||0, days.length), (c)=> chartSavings=c);
-
-    // Loans panel
+    renderChart('savingsChart', 'Savings (KES)', days, evenSeries(t.SAVINGS||0, days.length));
     $('loan_total').textContent = fmt(t.LOAN_REPAY||0);
     $('loan_days').textContent = days.length;
     $('loan_avg').textContent = fmt((t.LOAN_REPAY||0)/Math.max(1,days.length));
-    renderChart('loansChart', 'Loan Repay (KES)', days, evenSeries(t.LOAN_REPAY||0, days.length), (c)=> chartLoans=c);
+    renderChart('loansChart', 'Loan Repay (KES)', days, evenSeries(t.LOAN_REPAY||0, days.length));
   }
 
-  function renderChart(canvasId, label, labels, values, saveRef){
+  function renderChart(canvasId, label, labels, values){
     const ctx = document.getElementById(canvasId);
-    if (ctx._inst) { ctx._inst.destroy(); }
-    const inst = new Chart(ctx, {
+    if (ctx._inst) ctx._inst.destroy();
+    ctx._inst = new Chart(ctx, {
       type:'line',
       data:{ labels, datasets:[{ label, data: values, borderColor:'#1976d2', backgroundColor:'transparent', tension:.25 }]},
       options:{ responsive:true, scales:{ y:{ beginAtZero:true } } }
     });
-    ctx._inst = inst;
-    if (saveRef) saveRef(inst);
   }
 
   // ---------- transactions ----------
@@ -311,10 +383,137 @@
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click();
   }
 
+  // ---------- SACCO STAFF ----------
+  async function loadSaccoStaff(){
+    if (!currentSacco) return alert('Choose a SACCO first');
+    $('ss_sacco_lbl').textContent = currentSacco;
+    let rows = [];
+    try{
+      rows = await jrpc('sacco_admin_list_staff', { p_sacco: currentSacco });
+    }catch(_){
+      // Fallback REST (adjust to your server paths if different)
+      const d = await jget(`${baseU}/sacco/${currentSacco}/staff`);
+      rows = d.items || d || [];
+    }
+    const T = $('ss_tbody'); T.innerHTML='';
+    (rows||[]).forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.email || r.user_email || ''}</td>
+        <td>${r.role || ''}</td>
+        <td>${r.joined_at || r.created_at || ''}</td>
+        <td class="mono">${r.user_id || r.uid || ''}</td>
+        <td><button class="bad" data-uid="${r.user_id || r.uid}">Remove</button></td>`;
+      T.appendChild(tr);
+    });
+    $('ss_count').textContent = `${(rows||[]).length} member(s)`;
+    T.onclick = async (e)=>{
+      const b = e.target.closest('button'); if(!b) return;
+      const uid = b.dataset.uid;
+      if (!confirm('Remove staff '+uid+' from SACCO?')) return;
+      try{
+        try{
+          await jrpc('sacco_admin_remove_staff', { p_sacco: currentSacco, p_user: uid });
+        }catch(_){
+          await jpost(`${baseU}/sacco/${currentSacco}/staff/remove`, { user_id: uid });
+        }
+        await loadSaccoStaff();
+        alert('🗑️ Removed');
+      }catch(err){ alert(err.message||err); }
+    };
+  }
+  $('ss_add').onclick = async ()=>{
+    try{
+      if (!currentSacco) return alert('Choose a SACCO first');
+      const email = $('ss_email').value.trim();
+      const role  = $('ss_role').value;
+      if (!email) return alert('Enter email');
+      try{
+        await jrpc('sacco_admin_add_staff_by_email', { p_sacco: currentSacco, p_email: email, p_role: role });
+      }catch(_){
+        await jpost(`${baseU}/sacco/${currentSacco}/staff/add`, { email, role });
+      }
+      $('ss_email').value='';
+      await loadSaccoStaff();
+      alert('✅ Added');
+    }catch(e){ alert(e.message||e); }
+  };
+  $('ss_reload').onclick = loadSaccoStaff;
+  $('ss_export').onclick = ()=> exportTableToCSV('sacco-staff.csv', 'ss_tbody');
+
+  // ---------- MATATU STAFF (from SACCO) ----------
+  let MS_MATATU = '';
+  async function lookupMatatuByPlate(plate){
+    return jget('/api/lookup/matatu?plate='+encodeURIComponent(plate));
+  }
+  async function loadMatatuStaff(){
+    if (!MS_MATATU) return alert('Find a matatu first');
+    let rows = [];
+    try{
+      rows = await jrpc('sacco_admin_list_matatu_staff', { p_matatu: MS_MATATU });
+    }catch(_){
+      const d = await jget(`${baseU}/matatu/${MS_MATATU}/staff`);
+      rows = d.items || d || [];
+    }
+    const T = $('ms_tbody'); T.innerHTML='';
+    (rows||[]).forEach(r=>{
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.email || r.user_email || ''}</td>
+        <td>${r.role || ''}</td>
+        <td>${r.joined_at || r.created_at || ''}</td>
+        <td class="mono">${r.user_id || r.uid || ''}</td>
+        <td><button class="bad" data-uid="${r.user_id || r.uid}">Remove</button></td>`;
+      T.appendChild(tr);
+    });
+    T.onclick = async (e)=>{
+      const b = e.target.closest('button'); if(!b) return;
+      const uid = b.dataset.uid;
+      if (!confirm('Remove matatu staff '+uid+'?')) return;
+      try{
+        try{
+          await jrpc('sacco_admin_remove_matatu_staff', { p_matatu: MS_MATATU, p_user: uid });
+        }catch(_){
+          await jpost(`${baseU}/matatu/${MS_MATATU}/staff/remove`, { user_id: uid });
+        }
+        await loadMatatuStaff();
+        alert('🗑️ Removed');
+      }catch(err){ alert(err.message||err); }
+    };
+  }
+  $('ms_find').onclick = async ()=>{
+    try{
+      const plate = $('ms_plate').value.trim().toUpperCase(); if(!plate) return alert('Enter plate');
+      const r = await lookupMatatuByPlate(plate);
+      MS_MATATU = r.id || '';
+      $('ms_found').textContent = MS_MATATU ? `✅ ${r.number_plate} (${MS_MATATU})` : 'Not found';
+      if (MS_MATATU) $('ms_reload').click();
+    }catch(e){ alert(e.message||e); }
+  };
+  $('ms_reload').onclick = loadMatatuStaff;
+  $('ms_add').onclick = async ()=>{
+    try{
+      if (!MS_MATATU) return alert('Find a matatu first');
+      const email = $('ms_email').value.trim();
+      const role = $('ms_role').value;
+      if (!email) return alert('Enter email');
+      try{
+        await jrpc('sacco_admin_add_matatu_staff_by_email', { p_matatu: MS_MATATU, p_email: email, p_role: role });
+      }catch(_){
+        await jpost(`${baseU}/matatu/${MS_MATATU}/staff/add`, { email, role });
+      }
+      $('ms_email').value='';
+      await loadMatatuStaff();
+      alert('✅ Added');
+    }catch(e){ alert(e.message||e); }
+  };
+  $('ms_export').onclick = ()=> exportTableToCSV('matatu-staff.csv','ms_tbody');
+
   // ---------- wiring ----------
   $('saccoSelect').onchange = async ()=>{
     currentSacco = $('saccoSelect').value || null;
-    await Promise.all([loadMatatus(), loadSummary(), loadTx()]);
+    $('ss_sacco_lbl').textContent = currentSacco || '—';
+    await Promise.allSettled([loadMatatus(), loadSummary(), loadTx(), loadSaccoStaff()]);
   };
   $('applyRange').onclick = ()=> loadSummary();
   $('matatuSearch').oninput = ()=> { clearTimeout(window._mtT); window._mtT=setTimeout(loadMatatus, 200); };
@@ -327,13 +526,13 @@
   async function init(){
     try{
       await loadSaccos();
-      // auto-pick first sacco if present
       const sel = $('saccoSelect');
       if (sel.options.length > 1){
         sel.selectedIndex = 1;
         currentSacco = sel.value;
+        $('ss_sacco_lbl').textContent = currentSacco;
       }
-      await Promise.all([loadMatatus(), loadSummary(), loadTx()]);
+      await Promise.allSettled([loadMatatus(), loadSummary(), loadTx(), loadSaccoStaff()]);
     }catch(e){
       $('statusMsg').textContent = e.message;
       console.error(e);
