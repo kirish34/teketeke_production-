@@ -3,120 +3,136 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>TekeTeke Transport • Dashboards</title>
+  <title>TekeTeke — Choose Role</title>
   <style>
-    :root{--brand:#1976d2;--brand-700:#135ba1;--ink:#0f172a;--bg:#f5f7fb;--panel:#fff;--muted:#6b7280;--border:#e5e7eb}
-    *{box-sizing:border-box} html,body{margin:0;padding:0}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
-    a{color:inherit;text-decoration:none}
-    .top{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--border)}
-    .wrap{max-width:1100px;margin:0 auto;padding:14px 16px;display:flex;gap:14px;align-items:center}
-    .logo{display:flex;align-items:center;gap:10px;font-weight:700}
-    .badge{background:#eef6ff;color:#0b3c74;border:1px solid #cfe3ff;padding:2px 8px;border-radius:999px;font-size:12px}
-    .spacer{flex:1}
-    .nav{display:flex;gap:8px;flex-wrap:wrap}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:#fff}
-    .btn.primary{background:var(--brand);border-color:var(--brand-700);color:#fff}
-    .btn:hover{filter:brightness(.98)} .btn.primary:hover{background:var(--brand-700)}
-    .adm{display:flex;align-items:center;gap:8px;border:1px dashed var(--border);padding:6px 8px;border-radius:8px}
-    .adm input{border:1px solid var(--border);border-radius:6px;padding:6px 8px;min-width:240px}
-    .hero{max-width:1100px;margin:24px auto 0;padding:0 16px}
-    .title{font-size:28px;margin:10px 0 6px}
-    .muted{color:var(--muted)}
-    .grid{max-width:1100px;margin:16px auto;padding:0 16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
-    @media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    @media (max-width:640px){.grid{grid-template-columns:1fr}}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px;display:flex;gap:12px;align-items:center}
-    .card .ico{font-size:22px} .card .go{margin-left:auto}
-    footer{max-width:1100px;margin:20px auto;padding:10px 16px;color:var(--muted);font-size:14px}
+    :root{
+      --bg:#f5f7fb; --panel:#fff; --brand:#1976d2; --brand-700:#135ba1;
+      --ink:#0f172a; --muted:#6b7280; --border:#e5e7eb; --shadow:0 1px 8px rgba(0,0,0,.06);
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--ink)}
+    a{color:inherit}
+
+    .wrap{max-width:980px;margin:0 auto;padding:28px}
+    header.top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+    h1{margin:0;color:var(--brand);font-size:24px}
+    nav a{margin-left:12px;text-decoration:none;color:var(--muted)}
+    nav a:hover{color:var(--brand)}
+
+    .intro{margin:6px 0 14px;color:var(--muted)}
+
+    .section{margin-top:16px}
+    .section h2{font-size:16px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+      gap:14px;
+    }
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:16px;
+      box-shadow:var(--shadow);
+      display:flex;flex-direction:column;gap:8px;min-height:170px
+    }
+    .card .title{display:flex;align-items:center;gap:8px}
+    .card .title .icon{font-size:20px}
+    .card h3{margin:0;font-size:16px}
+    .card p{margin:0;color:var(--muted);line-height:1.4;min-height:40px}
+    .btn{
+      margin-top:auto;
+      display:inline-block;
+      padding:10px 14px;
+      border-radius:10px;
+      background:var(--brand);
+      color:#fff;
+      text-decoration:none;
+      text-align:center;
+      outline:none;
+    }
+    .btn:hover{background:var(--brand-700)}
+    .btn:focus{box-shadow:0 0 0 3px rgba(25,118,210,.25)}
+
+    @media (max-width:540px){ nav{display:none} }
   </style>
 </head>
 <body>
-
-  <!-- Top menu -->
-  <header class="top">
-    <div class="wrap">
-      <div class="logo">
-        <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:8px;background:var(--brand);color:#fff">TT</span>
-        <span>TekeTeke Transport</span>
-        <span class="badge">Dashboards</span>
-      </div>
-
-      <nav class="nav">
-        <a class="btn" href="/"><span>??</span>Home</a>
-        <a class="btn primary" href="/sacco/admin.html"><span>??</span>SACCO Admin</a>
-        <a class="btn" href="/sacco/sacco.html"><span>?????</span>SACCO Staff</a>
-        <a class="btn" href="/matatu/owner.html"><span>MO</span>Matatu Owner</a>
-        <a class="btn" href="/auth/role-select.html"><span>??</span>Logins</a>
+  <div class="wrap">
+    <header class="top">
+      <h1>Choose your role</h1>
+      <nav aria-label="Utility">
+        <a href="/">Home</a>
+        <a href="/auth/login.html">Login</a>
+        <a href="/auth/logout.html">Logout</a>
       </nav>
+    </header>
 
-      <div class="spacer"></div>
+    <p class="intro">Pick a role to continue. These links jump straight to each dashboard.</p>
 
-      <!-- optional: store admin token locally -->
-      <div class="adm" title="Stored locally in your browser">
-        <span class="muted">Admin token</span>
-        <input id="adm_token" placeholder="x-admin-token"/>
-        <button class="btn" id="save_token">Save</button>
+    <!-- System -->
+    <section class="section" aria-labelledby="sec-system">
+      <h2 id="sec-system">System</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🛠️</span><h3>System Admin</h3></div>
+          <p>Global system controls and configuration.</p>
+          <a class="btn" href="/admin.html" role="button" aria-label="Open System Admin dashboard">Open Dashboard</a>
+        </article>
       </div>
-    </div>
-  </header>
+    </section>
 
-  <!-- Hero -->
-  <section class="hero">
-    <h1 class="title">Welcome ??</h1>
-    <p class="muted">Choose your workspace below. The admin token you save here is used by the SACCO Admin dashboard only.</p>
-  </section>
+    <!-- SACCO -->
+    <section class="section" aria-labelledby="sec-sacco">
+      <h2 id="sec-sacco">SACCO</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🏢</span><h3>SACCO Admin</h3></div>
+          <p>Manage fleet, fees, loans, and staff.</p>
+          <a class="btn" href="/sacco/admin.html" role="button" aria-label="Open SACCO Admin dashboard">Open Dashboard</a>
+        </article>
 
-  <!-- Tiles -->
-  <main class="grid">
-    <a class="card" href="/admin.html">
-      <div class="ico">SA</div>
-      <div><strong>System Admin</strong><div class="muted">Platform overview & ops</div></div>
-      <span class="go">></span>
-    </a>
+        <article class="card">
+          <div class="title"><span class="icon">👥</span><h3>SACCO Staff</h3></div>
+          <p>Day-to-day fee tracking and confirmations.</p>
+          <a class="btn" href="/sacco/staff.html" role="button" aria-label="Open SACCO Staff dashboard">Open Dashboard</a>
+        </article>
+      </div>
+    </section>
 
-    <a class="card" href="/sacco/admin.html">
-      <div class="ico">SA</div>
-      <div><strong>SACCO Admin</strong><div class="muted">SACCOs, Matatus, USSD pool, fees</div></div>
-      <span class="go">></span>
-    </a>
+    <!-- Operators -->
+    <section class="section" aria-labelledby="sec-operators">
+      <h2 id="sec-operators">Operators</h2>
+      <div class="grid">
+        <article class="card">
+          <div class="title"><span class="icon">🚌</span><h3>Matatu Owner</h3></div>
+          <p>View balances, loans, repayments.</p>
+          <a class="btn" href="/matatu/owner.html" role="button" aria-label="Open Matatu Owner dashboard">Open Dashboard</a>
+        </article>
 
-    <a class="card" href="/sacco/sacco.html">
-      <div class="ico">SS</div>
-      <div><strong>SACCO Staff</strong><div class="muted">Daily operations & support</div></div>
-      <span class="go">></span>
-    </a>
+        <!-- Renamed & link updated -->
+        <article class="card">
+          <div class="title"><span class="icon">🧑‍💼</span><h3>Matatu Staff</h3></div>
+          <p>Operational console for daily routes.</p>
+          <a class="btn" href="/matatu/staff.html" role="button" aria-label="Open Matatu Staff console">Open Dashboard</a>
+        </article>
 
-    <a class="card" href="/matatu/owner.html">
-      <div class="ico">MO</div>
-      <div><strong>Matatu Owner</strong><div class="muted">Trips, repayments, summaries</div></div>
-      <span class="go">></span>
-    </a>
+        <article class="card">
+          <div class="title"><span class="icon">🚕</span><h3>Taxi</h3></div>
+          <p>Taxi operations dashboard.</p>
+          <!-- Change this href if your path is /taxi/ -->
+          <a class="btn" href="/taxy/taxy.html" role="button" aria-label="Open Taxi dashboard">Open Dashboard</a>
+        </article>
 
-    <a class="card" href="/conductor/console.html">
-      <div class="ico">C</div>
-      <div><strong>Conductor</strong><div class="muted">Collect fares, view activity</div></div>
-      <span class="go">></span>
-    </a>
-  </main>
-
-  <footer>
-    © <span id="yr"></span> TekeTeke Transport
-  </footer>
-
-  <script>
-    // admin token store (prefer tt_root_token; mirror legacy key)
-    const $ = s => document.querySelector(s);
-    const current = localStorage.getItem('tt_root_token') || localStorage.getItem('tt_admin_token') || '';
-    $('#adm_token').value = current;
-    $('#save_token').onclick = () => {
-      const v = $('#adm_token').value.trim();
-      localStorage.setItem('tt_root_token', v);
-      localStorage.setItem('tt_admin_token', v);
-      const b = $('#save_token'); const old = b.textContent; b.textContent = 'Saved';
-      setTimeout(()=> b.textContent = old, 900);
-    };
-    document.getElementById('yr').textContent = new Date().getFullYear();
-  </script>
+        <article class="card">
+          <div class="title"><span class="icon">🏍️</span><h3>Boda Boda</h3></div>
+          <p>Two-wheel operations dashboard.</p>
+          <a class="btn" href="/bodaboda/bodaboda.html" role="button" aria-label="Open Boda Boda dashboard">Open Dashboard</a>
+        </article>
+      </div>
+    </section>
+  </div>
 </body>
 </html>
