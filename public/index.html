@@ -8,6 +8,7 @@
     :root{
       --bg:#f5f7fb; --panel:#fff; --brand:#1976d2; --brand-700:#135ba1;
       --ink:#0f172a; --muted:#6b7280; --border:#e5e7eb; --shadow:0 1px 8px rgba(0,0,0,.06);
+      --ok:#0f766e; --warn:#b45309; --bad:#b91c1c;
     }
     *{box-sizing:border-box}
     html,body{margin:0;padding:0}
@@ -15,46 +16,47 @@
     a{color:inherit}
 
     .wrap{max-width:980px;margin:0 auto;padding:28px}
-    header.top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px}
+    header.top{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:8px; flex-wrap:wrap}
     h1{margin:0;color:var(--brand);font-size:24px}
     nav a{margin-left:12px;text-decoration:none;color:var(--muted)}
     nav a:hover{color:var(--brand)}
-
     .intro{margin:6px 0 14px;color:var(--muted)}
+
+    .tokens{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 16px}
+    .tokens input{min-width:240px;padding:8px;border:1px solid var(--border);border-radius:8px;background:#fff}
+    .tokens button{padding:8px 12px;border-radius:8px;border:1px solid var(--brand);background:var(--brand);color:#fff;cursor:pointer}
+    .tokens button.secondary{background:#fff;color:var(--brand)}
+    .tokens .note{color:var(--muted);font-size:12px}
 
     .section{margin-top:16px}
     .section h2{font-size:16px;margin:0 0 8px;color:var(--muted);font-weight:600;letter-spacing:.02em}
 
-    .grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
-      gap:14px;
-    }
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
     .card{
-      background:var(--panel);
-      border:1px solid var(--border);
-      border-radius:14px;
-      padding:16px;
-      box-shadow:var(--shadow);
-      display:flex;flex-direction:column;gap:8px;min-height:170px
+      position:relative;
+      background:var(--panel); border:1px solid var(--border); border-radius:14px;
+      padding:16px; box-shadow:var(--shadow);
+      display:flex; flex-direction:column; gap:8px; min-height:170px
     }
+    .status{position:absolute; top:10px; right:12px; font-size:12px; color:#fff; padding:2px 8px; border-radius:999px; background:var(--ok); display:none}
+    .status.warn{background:var(--warn)} .status.bad{background:var(--bad)} .status.show{display:inline-block}
+
     .card .title{display:flex;align-items:center;gap:8px}
     .card .title .icon{font-size:20px}
     .card h3{margin:0;font-size:16px}
     .card p{margin:0;color:var(--muted);line-height:1.4;min-height:40px}
     .btn{
-      margin-top:auto;
-      display:inline-block;
-      padding:10px 14px;
-      border-radius:10px;
-      background:var(--brand);
-      color:#fff;
-      text-decoration:none;
-      text-align:center;
-      outline:none;
+      margin-top:auto; display:inline-block; padding:10px 14px; border-radius:10px;
+      background:var(--brand); color:#fff; text-decoration:none; text-align:center; outline:none;
     }
     .btn:hover{background:var(--brand-700)}
     .btn:focus{box-shadow:0 0 0 3px rgba(25,118,210,.25)}
+    .btn[disabled]{opacity:.6; pointer-events:none}
+
+    .tools{display:flex;gap:8px;margin:4px 0 12px}
+    .tools button{padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:#fff;cursor:pointer}
+    .tools button:hover{border-color:var(--brand); color:var(--brand)}
+    pre#log{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px;white-space:pre-wrap;max-height:220px;overflow:auto}
 
     @media (max-width:540px){ nav{display:none} }
   </style>
@@ -70,16 +72,27 @@
       </nav>
     </header>
 
-    <p class="intro">Pick a role to continue. These links jump straight to each dashboard.</p>
+    <p class="intro">Pick a role to continue. These links jump straight to each dashboard. Save your tokens once and all dashboards will pick them up automatically.</p>
+
+    <div class="tokens" aria-label="Quick tokens">
+      <input id="rootToken" placeholder="Admin token (tt_root_token)"/>
+      <input id="userToken" placeholder="User token (auth_token)"/>
+      <button id="saveTokens">Save</button>
+      <button id="ping" class="secondary">Ping API</button>
+      <button id="checkLinks" class="secondary">Check links</button>
+      <span class="note">Tokens are stored in localStorage.</span>
+    </div>
+    <pre id="log" aria-live="polite">Ready.</pre>
 
     <!-- System -->
     <section class="section" aria-labelledby="sec-system">
       <h2 id="sec-system">System</h2>
       <div class="grid">
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🛠️</span><h3>System Admin</h3></div>
           <p>Global system controls and configuration.</p>
-          <a class="btn" href="/admin.html" role="button" aria-label="Open System Admin dashboard">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/admin.html" href="/admin.html" role="button" aria-label="Open System Admin dashboard">Open Dashboard</a>
         </article>
       </div>
     </section>
@@ -89,15 +102,17 @@
       <h2 id="sec-sacco">SACCO</h2>
       <div class="grid">
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🏢</span><h3>SACCO Admin</h3></div>
           <p>Manage fleet, fees, loans, and staff.</p>
-          <a class="btn" href="/sacco/admin.html" role="button" aria-label="Open SACCO Admin dashboard">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/sacco/admin.html" href="/sacco/admin.html" role="button" aria-label="Open SACCO Admin dashboard">Open Dashboard</a>
         </article>
 
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">👥</span><h3>SACCO Staff</h3></div>
           <p>Day-to-day fee tracking and confirmations.</p>
-          <a class="btn" href="/sacco/staff.html" role="button" aria-label="Open SACCO Staff dashboard">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/sacco/staff.html" href="/sacco/staff.html" role="button" aria-label="Open SACCO Staff dashboard">Open Dashboard</a>
         </article>
       </div>
     </section>
@@ -107,32 +122,111 @@
       <h2 id="sec-operators">Operators</h2>
       <div class="grid">
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🚌</span><h3>Matatu Owner</h3></div>
           <p>View balances, loans, repayments.</p>
-          <a class="btn" href="/matatu/owner.html" role="button" aria-label="Open Matatu Owner dashboard">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/matatu/owner.html" href="/matatu/owner.html" role="button" aria-label="Open Matatu Owner dashboard">Open Dashboard</a>
         </article>
 
-        <!-- Renamed & link updated -->
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🧑‍💼</span><h3>Matatu Staff</h3></div>
           <p>Operational console for daily routes.</p>
-          <a class="btn" href="/matatu/staff.html" role="button" aria-label="Open Matatu Staff console">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/matatu/staff.html" href="/matatu/staff.html" role="button" aria-label="Open Matatu Staff console">Open Dashboard</a>
         </article>
 
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🚕</span><h3>Taxi</h3></div>
           <p>Taxi operations dashboard.</p>
-          <!-- Change this href if your path is /taxi/ -->
-          <a class="btn" href="/taxy/taxy.html" role="button" aria-label="Open Taxi dashboard">Open Dashboard</a>
+          <!-- Primary is canonical /taxi/index.html; fallback auto-uses /taxy/taxy.html if present -->
+          <a class="btn link-check"
+             data-primary="/taxi/index.html"
+             data-fallback="/taxy/taxy.html"
+             href="/taxi/index.html"
+             role="button" aria-label="Open Taxi dashboard">Open Dashboard</a>
         </article>
 
         <article class="card">
+          <span class="status">OK</span>
           <div class="title"><span class="icon">🏍️</span><h3>Boda Boda</h3></div>
           <p>Two-wheel operations dashboard.</p>
-          <a class="btn" href="/bodaboda/bodaboda.html" role="button" aria-label="Open Boda Boda dashboard">Open Dashboard</a>
+          <a class="btn link-check" data-primary="/bodaboda/bodaboda.html" href="/bodaboda/bodaboda.html" role="button" aria-label="Open Boda Boda dashboard">Open Dashboard</a>
         </article>
       </div>
     </section>
   </div>
+
+  <script>
+    // ----- tokens -----
+    const $ = (s, r=document) => r.querySelector(s);
+    const $$ = (s, r=document) => [...r.querySelectorAll(s)];
+    const log = (m) => { const el = $("#log"); el.textContent = (el.textContent ? el.textContent + "\n" : "") + m; el.scrollTop = el.scrollHeight; };
+
+    const LS_ROOT = 'tt_root_token';
+    const LS_USER = 'auth_token';
+    $("#rootToken").value = localStorage.getItem(LS_ROOT) || '';
+    $("#userToken").value = localStorage.getItem(LS_USER) || '';
+
+    $("#saveTokens").onclick = () => {
+      localStorage.setItem(LS_ROOT, $("#rootToken").value.trim());
+      localStorage.setItem(LS_USER, $("#userToken").value.trim());
+      log("✅ Tokens saved to localStorage.");
+    };
+
+    // ----- ping -----
+    $("#ping").onclick = async () => {
+      try {
+        const r = await fetch("/ping");
+        log(`GET /ping → ${r.status} ${r.ok ? 'OK' : 'ERROR'}`);
+      } catch (e) {
+        log(`GET /ping failed: ${e.message}`);
+      }
+    };
+
+    // ----- link checker (HEAD same-origin) -----
+    async function headOk(url) {
+      try {
+        const r = await fetch(url, { method: "HEAD" });
+        return r.ok;
+      } catch { return false; }
+    }
+
+    async function verifyLink(a) {
+      const card = a.closest('.card');
+      const badge = card.querySelector('.status');
+      const primary = a.dataset.primary;
+      const fallback = a.dataset.fallback;
+
+      if (await headOk(primary)) {
+        a.href = primary;
+        badge.textContent = "OK";
+        badge.className = "status show";
+        return;
+      }
+      if (fallback && await headOk(fallback)) {
+        a.href = fallback;
+        badge.textContent = "Using fallback";
+        badge.className = "status warn show";
+        log(`⚠️ ${primary} missing → using fallback ${fallback}`);
+        return;
+      }
+      // missing
+      a.setAttribute('disabled', 'true');
+      badge.textContent = "Missing";
+      badge.className = "status bad show";
+      log(`❌ Missing page: ${primary}${fallback ? ' (fallback also missing)' : ''}`);
+    }
+
+    async function checkAll() {
+      const links = $$('.link-check');
+      log("Checking dashboard links…");
+      for (const a of links) await verifyLink(a);
+      log("Done.");
+    }
+    $("#checkLinks").onclick = checkAll;
+    // Auto-run once on load
+    checkAll();
+  </script>
 </body>
 </html>
