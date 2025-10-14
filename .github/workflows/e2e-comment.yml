@@ -16,19 +16,30 @@ permissions:
   issues: write
   pull-requests: write
 
+# Avoid overlapping runs on the same discussion
+concurrency:
+  group: e2e-comment-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   run-e2e:
     if: startsWith(github.event.comment.body, '/e2e')
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Authorize commenter
         id: authz
         run: |
-          echo "actor_association=${{ github.event.comment.author_association }}"
+          set -euo pipefail
+          echo "actor=${{ github.actor }}"
+          echo "assoc=${{ github.event.comment.author_association }}"
           case "${{ github.event.comment.author_association }}" in
-            OWNER|MEMBER|COLLABORATOR) echo "ok" ;;
+            OWNER|MEMBER|COLLABORATOR) echo "SKIP=0" >> $GITHUB_ENV ;;
             *) echo "::notice::Ignoring command from non-collaborator."; echo "SKIP=1" >> $GITHUB_ENV ;;
           esac
 
@@ -39,9 +50,10 @@ jobs:
       - name: Parse command
         id: parse
         run: |
+          set -euo pipefail
           BODY='${{ github.event.comment.body }}'
           # strip leading '/e2e' and normalize spaces
-          ARGS="$(echo "$BODY" | sed -E 's#^/e2e[[:space:]]*##')"
+          ARGS="$(echo "$BODY" | sed -E 's#^/e2e[[:space:]]*##' | tr -s ' ')"
           # defaults
           BASE=""
           BRANCH=""
@@ -59,11 +71,11 @@ jobs:
             esac
           done
 
-          echo "COMMENT_BASE=$BASE"    >> $GITHUB_ENV
-          echo "COMMENT_BRANCH=$BRANCH" >> $GITHUB_ENV
-          echo "COMMENT_STRICT=$STRICT" >> $GITHUB_ENV
-          echo "COMMENT_SEED=$SEED"     >> $GITHUB_ENV
-          echo "COMMENT_EMAIL=$EMAIL"   >> $GITHUB_ENV
+          echo "COMMENT_BASE=$BASE"      >> $GITHUB_ENV
+          echo "COMMENT_BRANCH=$BRANCH"  >> $GITHUB_ENV
+          echo "COMMENT_STRICT=$STRICT"  >> $GITHUB_ENV
+          echo "COMMENT_SEED=$SEED"      >> $GITHUB_ENV
+          echo "COMMENT_EMAIL=$EMAIL"    >> $GITHUB_ENV
 
       - name: Resolve PR head branch if missing
         id: resolve-branch
@@ -83,13 +95,17 @@ jobs:
             core.exportVariable('BRANCH', branch || 'main');
 
       - name: Validate inputs
+        id: validate
         run: |
-          if [ -z "${COMMENT_BASE}" ]; then
+          set -euo pipefail
+          ok=1
+          if [[ -z "${COMMENT_BASE}" ]]; then
             echo "::error::Missing base=<url>. Example: /e2e base=https://teketeke.vercel.app"
-            echo "INPUTS_OK=0" >> $GITHUB_ENV
-          else
-            echo "INPUTS_OK=1" >> $GITHUB_ENV
+            ok=0
+          elif ! echo "${COMMENT_BASE}" | grep -Eq '^https://[a-zA-Z0-9._-]+(\.vercel\.app|[a-zA-Z0-9._-]+)$'; then
+            echo "::warning::base doesn't look like an https URL: ${COMMENT_BASE}"
           fi
+          echo "INPUTS_OK=$ok" >> $GITHUB_ENV
 
       - name: Comment usage when missing base
         if: env.INPUTS_OK != '1'
@@ -102,7 +118,7 @@ jobs:
               `**Usage**`,
               "`/e2e base=https://<deploy-or-alias> [branch=<ref>] [strict=true|false] [seed=true|false] [email=false]`",
             ].join('\n');
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
@@ -128,23 +144,33 @@ jobs:
         run: npm ci
 
       - name: Optional seed
-        if: env.COMMENT_SEED == 'true'
+        if: env.COMMENT_SEED == 'true' && secrets.SUPABASE_URL != '' && secrets.SUPABASE_SERVICE_ROLE != ''
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
+          set -euo pipefail
           echo "Seeding (if script exists)…"
-          if [ -f scripts/seed.sh ]; then bash scripts/seed.sh; else echo "No scripts/seed.sh found"; fi
+          if [[ -f scripts/seed.sh ]]; then
+            bash scripts/seed.sh
+          elif [[ -f scripts/seed.js ]]; then
+            node scripts/seed.js
+          else
+            echo "No seed script found"
+          fi
 
       - name: Run health-check
         id: health
         env:
+          # Provide both names for compatibility with your script
+          BASE_URL: ${{ env.COMMENT_BASE }}
           BASE: ${{ env.COMMENT_BASE }}
           ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
         run: |
+          set -euo pipefail
           mkdir -p artifacts
           bash scripts/health-check.sh | tee artifacts/health.txt
-          if [ "${COMMENT_STRICT}" = "true" ] && grep -q "FAIL" artifacts/health.txt; then
+          if [[ "${COMMENT_STRICT}" == "true" ]] && grep -qE '^FAIL \|' artifacts/health.txt; then
             echo "::error::FAIL lines found in health.txt"
             echo "HEALTH_STATUS=fail" >> $GITHUB_ENV
             exit 1
@@ -153,6 +179,7 @@ jobs:
           fi
 
       - name: Upload artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-health
@@ -191,6 +218,7 @@ jobs:
         with:
           server_address: smtp.zoho.com
           server_port: 587
+          secure: false
           username: ${{ secrets.ZOHO_EMAIL }}
           password: ${{ secrets.ZOHO_APP_PASSWORD }}
           subject: "E2E FAILED — ${{ github.repository }} (${{ env.BRANCH }})"
@@ -204,4 +232,3 @@ jobs:
             Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             (health.txt attached as artifact 'e2e-health')
-

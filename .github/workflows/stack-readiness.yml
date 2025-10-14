@@ -29,47 +29,83 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: stack-readiness
+  cancel-in-progress: true
+
 jobs:
   readiness:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          BASE="${{ inputs.base }}"
+          if [[ -z "$BASE" ]]; then
+            echo "::error::Missing input 'base'"
+            exit 1
+          fi
+          if ! echo "$BASE" | grep -Eq '^https://'; then
+            echo "::warning::Base does not look like an https URL: $BASE"
+          fi
+          echo "Target base: $BASE"
+
       - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y jq dnsutils
+
       - name: Run readiness report
         id: run
         env:
+          # Provide both names for script compatibility
+          BASE_URL: ${{ inputs.base }}
           BASE: ${{ inputs.base }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          # Fallback so first run (or forks) doesn't bail on empty secret
+          ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN || secrets.ADMIN_TOKEN || 'dummy-admin-token' }}
+          # Only pass APEX/WWW when check_domain=true
           APEX: ${{ inputs.check_domain && inputs.apex || '' }}
           WWW: ${{ inputs.check_domain && inputs.www || '' }}
         run: |
           set -euo pipefail
-          bash scripts/stack-readiness.sh | tee readiness.txt
-          # capture summary to job summary
+          mkdir -p artifacts
+          bash scripts/stack-readiness.sh | tee artifacts/readiness.txt
+
           {
             echo "### Stack Readiness Report"
             echo
             echo "**Target:** $BASE"
             echo
-            sed -n '1,999p' readiness.txt
+            sed -n '1,999p' artifacts/readiness.txt
           } >> "$GITHUB_STEP_SUMMARY"
-          if grep -q '^FAIL |' readiness.txt; then
-            echo "had_failures=true" >> $GITHUB_OUTPUT
+
+          if grep -qE '^FAIL \|' artifacts/readiness.txt; then
+            echo "had_failures=true"  >> "$GITHUB_OUTPUT"
           else
-            echo "had_failures=false" >> $GITHUB_OUTPUT
+            echo "had_failures=false" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Upload report artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: readiness-report
           path: |
-            readiness.txt
+            artifacts/readiness.txt
             REPORTS/READINESS.md
           retention-days: 7
+          if-no-files-found: warn
+
       - name: Enforce strict mode
         if: ${{ inputs.strict && steps.run.outputs.had_failures == 'true' }}
         run: |
           echo "FAIL lines detected and strict=true — failing the job."
           exit 1
-

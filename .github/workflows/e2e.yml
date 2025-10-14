@@ -1,1 +1,105 @@
-﻿<PASTE THE YAML ABOVE>
+﻿name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+# Read-only is enough for E2E; keeps token tight.
+permissions:
+  contents: read
+
+# Avoid overlapping runs on the same ref (push+schedule).
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      BASE_URL: ${{ secrets.TEKETEKE_BASE_URL }}
+      ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      SEED_START: '110'
+      SEED_COUNT: '30'
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install deps
+        run: npm ci
+
+      # Only seed if Supabase creds exist (secrets are empty on forks).
+      - name: Seed database (optional)
+        if: ${{ env.SUPABASE_URL != '' && env.SUPABASE_SERVICE_ROLE != '' }}
+        run: |
+          echo "Seeding with range: ${SEED_START}-${SEED_COUNT}"
+          if [[ -f scripts/seed.js ]]; then
+            node scripts/seed.js
+          elif [[ -f scripts/seed-ussd-pool.js ]]; then
+            node scripts/seed-ussd-pool.js
+          else
+            echo "Seeder skipped/missing"
+          fi
+
+      - name: Run E2E health script (fail on FAIL lines)
+        env:
+          BASE_URL: ${{ env.BASE_URL }}     # pass through as BASE_URL
+          ADMIN_TOKEN: ${{ env.ADMIN_TOKEN }}
+        run: |
+          set -eo pipefail
+          mkdir -p artifacts
+          bash scripts/health-check.sh | tee artifacts/health.txt
+          if grep -q '^FAIL \|' artifacts/health.txt; then
+            echo "::error::FAIL lines found in health.txt"
+            exit 1
+          fi
+
+      - name: Upload health artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-health
+          path: artifacts/health.txt
+          if-no-files-found: warn
+
+      # Only send email on failures from *this repo* (not forks),
+      # since secrets aren't exposed to forked PRs.
+      - name: Send failure email
+        if: failure() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: smtp.zoho.com
+          server_port: 587
+          secure: false
+          username: ${{ secrets.ZOHO_EMAIL }}
+          password: ${{ secrets.ZOHO_APP_PASSWORD }}
+          subject: "E2E failed: ${{ github.repository }} @ ${{ github.ref_name }}"
+          from: ${{ secrets.ZOHO_EMAIL }}
+          to: ${{ secrets.EMAIL_TO }}
+          content_type: text/plain
+          body: |
+            Workflow: ${{ github.workflow }}
+            Run:      ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Commit:   ${{ github.sha }}
+            Branch:   ${{ github.ref_name }}
+
+            The E2E job failed. Health output artifact: "e2e-health".

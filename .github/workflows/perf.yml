@@ -38,27 +38,78 @@ permissions:
 jobs:
   k6:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      BASE_URL: ${{ secrets.TEKETEKE_BASE_URL }}
+      MODE: ${{ inputs.MODE || 'smoke' }}
+      VUS: ${{ inputs.VUS }}
+      DURATION: ${{ inputs.DURATION }}
+      RUN_ADMIN: ${{ inputs.RUN_ADMIN || 'true' }}
+      RUN_MEMBER: ${{ inputs.RUN_MEMBER || 'false' }}
+      ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
+      AUTH_TOKEN: ${{ secrets.TEKETEKE_AUTH_TOKEN }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run k6 ${{ inputs.MODE || 'smoke' }}
-        env:
-          BASE_URL: ${{ secrets.TEKETEKE_BASE_URL }}
-          MODE: ${{ inputs.MODE || 'smoke' }}
-          VUS: ${{ inputs.VUS }}
-          DURATION: ${{ inputs.DURATION }}
-          RUN_ADMIN: ${{ inputs.RUN_ADMIN || 'true' }}
-          RUN_MEMBER: ${{ inputs.RUN_MEMBER || 'false' }}
-          ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
-          AUTH_TOKEN: ${{ secrets.TEKETEKE_AUTH_TOKEN }}
+      - name: Setup Node (for summary/gate scripts)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install repo deps (optional; for parse/guard scripts)
         run: |
+          if [[ -f package.json ]]; then
+            npm ci
+          fi
+
+      - name: Preflight & derive flags
+        id: preflight
+        run: |
+          set -euo pipefail
           mkdir -p artifacts
-          docker run --rm -i \
-            -e BASE_URL -e MODE -e VUS -e DURATION -e RUN_ADMIN -e RUN_MEMBER \
+
+          # Require BASE_URL for meaningful perf runs
+          if [[ -z "${BASE_URL:-}" ]]; then
+            echo "::error::TEKETEKE_BASE_URL secret is empty. Set it in repo secrets."
+            exit 1
+          fi
+
+          # Coerce admin/member flags if tokens are missing
+          RA="${RUN_ADMIN}"
+          RM="${RUN_MEMBER}"
+
+          if [[ "${RA}" == "true" && -z "${ADMIN_TOKEN:-}" ]]; then
+            echo "::warning::RUN_ADMIN=true but ADMIN_TOKEN is missing; forcing RUN_ADMIN=false"
+            RA="false"
+          fi
+          if [[ "${RM}" == "true" && -z "${AUTH_TOKEN:-}" ]]; then
+            echo "::warning::RUN_MEMBER=true but AUTH_TOKEN is missing; forcing RUN_MEMBER=false"
+            RM="false"
+          fi
+
+          echo "RUN_ADMIN_EFF=${RA}" >> "$GITHUB_ENV"
+          echo "RUN_MEMBER_EFF=${RM}" >> "$GITHUB_ENV"
+
+      - name: Run k6 ${{ inputs.MODE || 'smoke' }}
+        run: |
+          set -euo pipefail
+          # Export computed flags for docker
+          export RUN_ADMIN_EFF RUN_MEMBER_EFF
+          docker run --rm \
+            -e BASE_URL -e MODE -e VUS -e DURATION \
+            -e RUN_ADMIN="$RUN_ADMIN_EFF" -e RUN_MEMBER="$RUN_MEMBER_EFF" \
             -e ADMIN_TOKEN -e AUTH_TOKEN \
             -v "$PWD:/work" -w /work \
-            grafana/k6:0.49.0 run --summary-export artifacts/k6-${MODE}.json scripts/k6-load.js
+            grafana/k6:0.49.0 run \
+              --summary-export artifacts/k6-"${MODE}".json \
+              scripts/k6-load.js
 
       - name: Upload k6 summary
         if: always()
@@ -66,16 +117,27 @@ jobs:
         with:
           name: k6-${{ inputs.MODE || 'smoke' }}-summary
           path: artifacts/k6-*.json
+          if-no-files-found: warn
 
       - name: Summarize k6 p95/p99 + error rate
         if: always()
         run: |
-          node scripts/parse-k6-summary.js artifacts/k6-${{ inputs.MODE || 'smoke' }}.json || true
+          set -euo pipefail
+          if [[ -f scripts/parse-k6-summary.js ]]; then
+            node scripts/parse-k6-summary.js "artifacts/k6-${MODE}.json" || true
+          else
+            echo "::notice::No scripts/parse-k6-summary.js present; skipping summary"
+          fi
 
       - name: Perf gate (p95/error)
-        if: ${{ always() && inputs.MODE }}
+        if: always()
         env:
           P95: ${{ inputs.MODE == 'spike' && '800' || '500' }}
           ERR: ${{ inputs.MODE == 'spike' && '0.02' || '0.01' }}
         run: |
-          node scripts/guard-k6.js artifacts/k6-${{ inputs.MODE || 'smoke' }}.json "$P95" "$ERR"
+          set -euo pipefail
+          if [[ -f scripts/guard-k6.js ]]; then
+            node scripts/guard-k6.js "artifacts/k6-${MODE}.json" "$P95" "$ERR"
+          else
+            echo "::notice::No scripts/guard-k6.js present; skipping perf gate"
+          fi

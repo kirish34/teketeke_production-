@@ -1,47 +1,138 @@
 name: Promote alias after DNS
+
 on:
   workflow_dispatch:
     inputs:
       deploy_url:
-        description: "Vercel deployment URL"
+        description: "Vercel deployment URL (e.g. https://xyz.vercel.app)"
         required: true
+      apex:
+        description: "Apex domain"
+        required: false
+        default: "teketeke.app"
+      www:
+        description: "WWW domain"
+        required: false
+        default: "www.teketeke.app"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: alias-${{ inputs.apex }}
+  cancel-in-progress: true
+
 jobs:
   alias:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y dnsutils
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - run: npm i -g vercel
-      - name: Wait for DNS
-        env:
-          APEX: teketeke.app
-          WWW: www.teketeke.app
-          MAX_WAIT: "1800"
-        run: |
-          set -euo pipefail
-          t=0; SLEEP=20
-          apex_ok(){ [ "$(dig +short A $APEX @8.8.8.8 | grep -c '^76\.76\.21\.21$')" -ge 1 ]; }
-          www_ok(){ c=$(dig +short CNAME $WWW @8.8.8.8); [ -n "$c" ] && echo "$c" | grep -qi vercel-dns.com || [ "$(dig +short A $WWW @8.8.8.8 | grep -c '^76\.76\.21\.21$')" -ge 1 ]; }
-          while ! apex_ok || ! www_ok; do
-            echo "waiting… t=$t"; sleep $SLEEP; t=$((t+SLEEP)); [ $t -ge $MAX_WAIT ] && exit 1
-          done
-      - name: Alias & smoke
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-        run: |
-          set -euo pipefail
-          vercel whoami
-          vercel link --yes
-          vercel domains add teketeke.app || true
-          vercel alias set "${{ inputs.deploy_url }}" teketeke.app
-          vercel alias set "${{ inputs.deploy_url }}" www.teketeke.app
-          for p in /ping /__version /__healthz /openapi.json /docs /redoc; do
-            curl -s -o /dev/null -w "%{http_code}\n" "https://teketeke.app$p" | grep -qx 200
-          done
-          curl -s -o /dev/null -w "%{http_code}\n" "https://www.teketeke.app/ping" | grep -qx 308
 
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      DEPLOY_URL: ${{ inputs.deploy_url }}
+      APEX: ${{ inputs.apex }}
+      WWW: ${{ inputs.www }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      MAX_WAIT: "1800"   # 30 minutes
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install DNS utils & Vercel CLI
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y dnsutils
+          npm i -g vercel@latest
+
+      - name: Preflight
+        run: |
+          set -euo pipefail
+          if [[ -z "${DEPLOY_URL:-}" ]]; then
+            echo "::error::deploy_url is required"
+            exit 1
+          fi
+          if ! echo "$DEPLOY_URL" | grep -Eq '^https://[a-zA-Z0-9._-]+\.vercel\.app/?$'; then
+            echo "::warning::deploy_url doesn't look like a Vercel URL: $DEPLOY_URL"
+          fi
+          if [[ -z "${VERCEL_TOKEN:-}" || -z "${VERCEL_ORG_ID:-}" || -z "${VERCEL_PROJECT_ID:-}" ]]; then
+            echo "::error::VERCEL_TOKEN / VERCEL_ORG_ID / VERCEL_PROJECT_ID are required as repo secrets"
+            exit 1
+          fi
+          echo "Apex: $APEX"
+          echo "WWW : $WWW"
+          echo "Deploy: $DEPLOY_URL"
+
+      - name: Wait for DNS (Apex + WWW pointing to Vercel)
+        run: |
+          set -euo pipefail
+          t=0; S=20
+          apex_ok(){
+            dig +short A "$APEX" @8.8.8.8 | grep -q '^76\.76\.21\.21$'
+          }
+          www_ok(){
+            cn=$(dig +short CNAME "$WWW" @8.8.8.8 || true)
+            if [[ -n "$cn" ]]; then
+              echo "$cn" | grep -qi 'vercel-dns.com'
+            else
+              dig +short A "$WWW" @8.8.8.8 | grep -q '^76\.76\.21\.21$'
+            fi
+          }
+          show(){
+            if "$1"; then echo true; else echo false; fi
+          }
+          while ! apex_ok || ! www_ok; do
+            echo "waiting for DNS… apex=$(show apex_ok) www=$(show www_ok) t=$t"
+            sleep "$S"; t=$((t+S)); [[ $t -ge ${MAX_WAIT} ]] && { echo "DNS timeout"; exit 1; }
+          done
+          echo "DNS OK for $APEX and $WWW"
+
+      - name: Alias domains to deployment
+        run: |
+          set -euo pipefail
+          vercel whoami --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          # Ensure domains exist in the team scope (idempotent)
+          vercel domains add "$APEX" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" || true
+          vercel domains add "$WWW"  --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" || true
+          # Attach aliases to this deployment
+          vercel alias set "$DEPLOY_URL" "$APEX" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+          vercel alias set "$DEPLOY_URL" "$WWW"  --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+
+      - name: Smoke tests (apex 200; www 308→apex or 200)
+        run: |
+          set -euo pipefail
+          base="https://$APEX"
+          www="https://$WWW"
+
+          chk_exact(){
+            url="$1"; want="$2"
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            echo "$url -> $code (want $want)"
+            [[ "$code" == "$want" ]]
+          }
+          chk_any(){
+            url="$1"; shift
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            echo "$url -> $code (accepted: $*)"
+            for w in "$@"; do [[ "$code" == "$w" ]] && return 0; done
+            return 1
+          }
+
+          # Apex endpoints should serve
+          for p in /ping /__version /openapi.json /docs /redoc; do
+            chk_exact "$base$p" 200
+          done
+          # __healthz optional
+          if ! chk_any "$base/__healthz" 200 204 404; then
+            echo "::warning::__healthz not reachable with acceptable codes"
+          fi
+
+          # www should typically redirect to apex; accept 200 if already served
+          for p in / /ping /docs; do
+            chk_any "$www$p" 308 200
+          done

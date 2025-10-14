@@ -2,12 +2,32 @@ name: OpenAPI Validation
 
 on:
   push:
+    paths:
+      - 'openapi.yaml'
+      - 'openapi.yml'
+      - 'openapi.json'
   pull_request:
+    paths:
+      - 'openapi.yaml'
+      - 'openapi.yml'
+      - 'openapi.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-openapi:
-    name: Lint OpenAPI Spec
+    name: Lint & Validate OpenAPI Spec
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,13 +36,49 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.19.0'
-          cache: 'npm'
 
-      - name: Lint OpenAPI Spec
-        run: npx -y @redocly/cli@2.5.0 lint openapi.yaml
+      - name: Locate spec (yaml/yml/json)
+        id: locate
+        run: |
+          set -euo pipefail
+          SPEC=""
+          for f in openapi.yaml openapi.yml openapi.json; do
+            [[ -f "$f" ]] && { SPEC="$f"; break; }
+          done
+          if [[ -z "$SPEC" ]]; then
+            echo "::error::No OpenAPI file found (openapi.yaml|openapi.yml|openapi.json)"
+            exit 1
+          fi
+          echo "SPEC=$SPEC" >> "$GITHUB_ENV"
+          echo "Using spec: $SPEC"
+
+      - name: Lint with Redocly
+        run: npx -y @redocly/cli@2.5.0 lint "$SPEC"
 
       - name: Validate with swagger-cli (OpenAPI 3)
-        run: npx -y swagger-cli@4 validate openapi.yaml
+        run: npx -y swagger-cli@4 validate "$SPEC"
 
-      - name: Bundle openapi.yaml (sanity)
-        run: npx -y @redocly/cli@latest bundle openapi.yaml --output ./openapi.bundle.json
+      - name: Bundle spec (JSON)
+        run: |
+          set -euo pipefail
+          OUT="openapi.bundle.json"
+          npx -y @redocly/cli@latest bundle "$SPEC" --output "$OUT"
+          echo "BUNDLE=$OUT" >> "$GITHUB_ENV"
+
+      - name: Upload bundled spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-bundle
+          path: ${{ env.BUNDLE }}
+          if-no-files-found: error
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### OpenAPI Validation"
+            echo "- **Spec:** \`${{ env.SPEC }}\`"
+            echo "- **Bundle:** \`${{ env.BUNDLE }}\`"
+            echo
+            echo "**Status:** \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,4 +1,5 @@
 name: Stack Health (comment)
+
 on:
   issue_comment:
     types: [created]
@@ -8,33 +9,137 @@ permissions:
   issues: write
   pull-requests: write
 
+concurrency:
+  group: stack-health-comment-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
 jobs:
   comment:
-    if: startsWith(github.event.comment.body, '/health ')
+    if: startsWith(github.event.comment.body, '/health')
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - uses: actions/checkout@v4
+
+      # Gate to collaborators only
+      - name: Authorize commenter
+        id: authz
+        run: |
+          set -euo pipefail
+          echo "actor=${{ github.actor }}"
+          echo "assoc=${{ github.event.comment.author_association }}"
+          case "${{ github.event.comment.author_association }}" in
+            OWNER|MEMBER|COLLABORATOR) echo "SKIP=0" >> $GITHUB_ENV ;;
+            *) echo "::notice::Ignoring command from non-collaborator."; echo "SKIP=1" >> $GITHUB_ENV ;;
+          esac
+
+      - name: Early exit if unauthorized
+        if: env.SKIP == '1'
+        run: exit 0
+
       - name: Parse inputs
+        id: parse
         run: |
-          BASE=$(echo "${{ github.event.comment.body }}" | awk '{print $2}')
-          STRICT=$(echo "${{ github.event.comment.body }}" | awk '{print $3}')
-          echo "BASE=$BASE" >> $GITHUB_ENV
-          echo "STRICT=$STRICT" >> $GITHUB_ENV
+          set -euo pipefail
+          BODY='${{ github.event.comment.body }}'
+          # strip the command itself and normalize spaces
+          ARGS="$(echo "$BODY" | sed -E 's#^/health[[:space:]]*##' | tr -s ' ')"
+
+          BASE=""
+          STRICT="false"
+
+          # Allow: "/health https://app", "/health base=https://app strict", "/health base=https://app strict=true"
+          for kv in $ARGS; do
+            case "$kv" in
+              base=*)  BASE="${kv#base=}" ;;
+              strict=*)
+                v="${kv#strict=}";
+                [[ -z "$v" || "$v" == "true" || "$v" == "strict" ]] && STRICT="true" || STRICT="false"
+                ;;
+              http*://*)
+                # If a bare URL is provided as 1st arg
+                [[ -z "$BASE" ]] && BASE="$kv"
+                ;;
+            esac
+          done
+
+          echo "BASE=$BASE"      >> $GITHUB_ENV
+          echo "STRICT=$STRICT"  >> $GITHUB_ENV
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          set -euo pipefail
+          ok=1
+          if [[ -z "${BASE}" ]]; then
+            echo "::error::Missing base URL. Usage: /health base=https://<host> [strict|strict=true]"
+            ok=0
+          elif ! echo "${BASE}" | grep -Eq '^https://'; then
+            echo "::warning::Base does not look like https URL: ${BASE}"
+          fi
+          echo "INPUTS_OK=$ok" >> $GITHUB_ENV
+
+      - name: Comment usage when invalid
+        if: env.INPUTS_OK != '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = [
+              '⚠️ Missing `base`.',
+              '',
+              '**Usage**',
+              '`/health base=https://<host> [strict|strict=true]`',
+              'or',
+              '`/health https://<host> strict`'
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+      - name: Exit when invalid
+        if: env.INPUTS_OK != '1'
+        run: exit 0
+
       - name: Install deps
-        run: sudo apt-get update && sudo apt-get install -y jq dnsutils
-      - name: Run health-check
-        env:
-          BASE: ${{ env.BASE }}
-          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
         run: |
-          bash scripts/health-check.sh | tee health.txt
-          echo "### Health Report for $BASE" >> $GITHUB_STEP_SUMMARY
-          sed -n '1,999p' health.txt >> $GITHUB_STEP_SUMMARY
-          if [ "${{ env.STRICT }}" = "strict" ] && grep -q '^FAIL |' health.txt; then
-            echo "Strict mode: failing due to FAIL lines."; exit 1
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Run health-check
+        id: health
+        env:
+          # Provide both names for compatibility with your script
+          BASE_URL: ${{ env.BASE }}
+          BASE: ${{ env.BASE }}
+          ADMIN_TOKEN: ${{ secrets.TEKETEKE_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          bash scripts/health-check.sh | tee artifacts/health.txt
+          echo "### Health Report for ${BASE}" >> $GITHUB_STEP_SUMMARY
+          sed -n '1,200p' artifacts/health.txt >> $GITHUB_STEP_SUMMARY
+          if [[ "${STRICT}" == "true" ]] && grep -qE '^FAIL \|' artifacts/health.txt; then
+            echo "::error::Strict mode: FAIL lines found"
+            exit 1
           fi
 
-      - name: Post summary reply to triggering issue
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-health
+          path: artifacts/health.txt
+          if-no-files-found: warn
+
+      - name: Post summary reply to thread
         if: always()
         uses: actions/github-script@v7
         with:
@@ -43,65 +148,88 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = context.payload.issue.number;
-            const bodyText = fs.readFileSync('health.txt', 'utf8');
+            let bodyText = 'no health.txt';
+            try {
+              bodyText = fs.readFileSync('artifacts/health.txt','utf8');
+            } catch {}
+            const snippet = bodyText.length > 60000 ? (bodyText.slice(0,60000) + '\n[truncated]') : bodyText;
             await github.rest.issues.createComment({
               owner, repo, issue_number,
               body: [
-                '### Health Check Result',
+                `### Health Check Result for \`${process.env.BASE}\``,
                 '',
                 '```txt',
-                bodyText.length > 60000 ? (bodyText.slice(0, 60000) + '\n[truncated]') : bodyText,
+                snippet,
                 '```'
               ].join('\n')
             });
 
-      - name: Open/close failure issue (like main workflow)
+      - name: Open/close failure issue (fork-safe)
         if: always()
         uses: actions/github-script@v7
         env:
-          BASE: ${{ env.BASE }}
+          BASE_INPUT: ${{ env.BASE }}
         with:
           script: |
             const fs = require('fs');
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const base = process.env.BASE;
+            const base = process.env.BASE_INPUT;
             const label = 'stack-health';
             const title = `Stack Health FAIL: ${base}`;
-            const bodyText = fs.readFileSync('health.txt', 'utf8');
+            let bodyText = '';
+            try { bodyText = fs.readFileSync('artifacts/health.txt','utf8'); } catch {}
             const hasFail = bodyText.split('\n').some(l => l.startsWith('FAIL |'));
 
-            // Ensure label
-            try { await github.rest.issues.getLabel({ owner, repo, name: label }); }
-            catch {
-              await github.rest.issues.createLabel({
-                owner, repo, name: label, color: 'd73a4a',
-                description: 'Automated health-check failures'
-              });
+            // Ensure label (skip on 403)
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label });
+            } catch (e) {
+              try {
+                await github.rest.issues.createLabel({
+                  owner, repo, name: label, color: 'd73a4a',
+                  description: 'Automated health-check failures'
+                });
+              } catch (err) {
+                if (err.status === 403) {
+                  core.warning('Skipping label creation (permissions).');
+                } else {
+                  throw err;
+                }
+              }
             }
 
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner, repo, state: 'open', labels: label, per_page: 100
-            });
-            const existing = issues.find(i => i.title === title);
-
-            if (hasFail) {
-              const commentBody = [
-                `New failing run for **${base}** at ${new Date().toISOString()}:`,
-                '',
-                '```txt',
-                bodyText.length > 60000 ? (bodyText.slice(0, 60000) + '\n[truncated]') : bodyText,
-                '```'
-              ].join('\n');
-              if (existing) {
-                await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: commentBody });
-              } else {
-                await github.rest.issues.create({ owner, repo, title, labels: [label], body: commentBody });
-              }
-            } else if (existing) {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number: existing.number,
-                body: `Passing run for **${base}** at ${new Date().toISOString()}. Closing. ✅`
+            // Manage failure issue
+            try {
+              const { data: issues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: label, per_page: 100
               });
-              await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: 'closed' });
+              const existing = issues.find(i => i.title === title);
+
+              if (hasFail) {
+                const commentBody = [
+                  `New failing run for **${base}** at ${new Date().toISOString()}:`,
+                  '',
+                  '```txt',
+                  bodyText.length > 60000 ? (bodyText.slice(0, 60000) + '\n[truncated]') : bodyText,
+                  '```'
+                ].join('\n');
+                if (existing) {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body: commentBody });
+                } else {
+                  await github.rest.issues.create({ owner, repo, title, labels: [label], body: commentBody });
+                }
+              } else if (existing) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existing.number,
+                  body: `Passing run for **${base}** at ${new Date().toISOString()}. Closing. ✅`
+                });
+                await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: 'closed' });
+              }
+            } catch (e) {
+              if (e.status === 403) {
+                core.warning('Skipping issue mutations (permissions).');
+              } else {
+                throw e;
+              }
             }

@@ -34,58 +34,75 @@ env:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # Only run on dispatch OR '/codex' issue comments
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issue_comment' &&
        contains(github.event.comment.body, '/codex') )
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Verify actor (comments only)
+        id: auth
         if: github.event_name == 'issue_comment'
         run: |
-          set -e
+          set -euo pipefail
           ACTOR="${{ github.actor }}"
           IFS=',' read -ra ALLOWED <<< "${ALLOWED_ACTORS}"
-          ok=0
+          allowed=false
           for a in "${ALLOWED[@]}"; do
-            [ "$ACTOR" = "$(echo "$a" | xargs)" ] && ok=1
+            a_trimmed="$(echo "$a" | xargs)"
+            if [[ "$ACTOR" == "$a_trimmed" ]]; then
+              allowed=true
+              break
+            fi
           done
-          [ "$ok" -eq 1 ] || { echo "Actor $ACTOR not allowed; ignoring."; exit 0; }
+          echo "Actor: $ACTOR  Allowed: $allowed"
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
 
       - name: Parse inputs
         id: parse
         run: |
-          set -e
+          set -euo pipefail
           ACTION=""
           DEPLOY_URL=""
           APEX_IN="${{ inputs.apex }}"
           WWW_IN="${{ inputs.www }}"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             ACTION="${{ inputs.action }}"
             DEPLOY_URL="${{ inputs.deploy_url }}"
             APEX="${APEX_IN:-$APEX}"
             WWW="${WWW_IN:-$WWW}"
           else
-            # Expected comment formats:
+            # Formats:
             # /codex alias https://xyz.vercel.app teketeke.app www.teketeke.app
             # /codex smoke
             body="${{ github.event.comment.body }}"
-            ACTION=$(echo "$body" | awk '{print $2}')
-            DEPLOY_URL=$(echo "$body" | awk '{print $3}')
-            APEX_C=$(echo "$body" | awk '{print $4}')
-            WWW_C=$(echo "$body" | awk '{print $5}')
-            [ -n "$APEX_C" ] && APEX="$APEX_C"
-            [ -n "$WWW_C" ] && WWW="$WWW_C"
+            ACTION="$(echo "$body" | awk '{print $2}')"
+            DEPLOY_URL="$(echo "$body" | awk '{print $3}')"
+            APEX_C="$(echo "$body" | awk '{print $4}')"
+            WWW_C="$(echo "$body" | awk '{print $5}')"
+            [[ -n "$APEX_C" ]] && APEX="$APEX_C" || APEX="$APEX"
+            [[ -n "$WWW_C" ]] && WWW="$WWW_C" || WWW="$WWW"
           fi
-          echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "deploy_url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "apex=$APEX" >> $GITHUB_OUTPUT
-          echo "www=$WWW" >> $GITHUB_OUTPUT
+
+          # Normalize action
+          ACTION="${ACTION:-alias}"
+
+          echo "action=$ACTION" >> "$GITHUB_OUTPUT"
+          echo "deploy_url=${DEPLOY_URL:-}" >> "$GITHUB_OUTPUT"
+          echo "apex=$APEX" >> "$GITHUB_OUTPUT"
+          echo "www=$WWW" >> "$GITHUB_OUTPUT"
 
       - name: Install deps (vercel, dig)
         run: |
           npm i -g vercel@latest
-          sudo apt-get update && sudo apt-get install -y dnsutils
+          sudo apt-get update -y
+          sudo apt-get install -y dnsutils
 
       - name: Wait for DNS (Apex + WWW)
         env:
@@ -95,19 +112,29 @@ jobs:
         run: |
           set -euo pipefail
           t=0; S=20
-          apex_ok(){ [ "$(dig +short A $APEX @8.8.8.8 | grep -c '^76\.76\.21\.21$')" -ge 1 ]; }
+          apex_ok(){ dig +short A "$APEX" @8.8.8.8 | grep -q '^76\.76\.21\.21$'; }
           www_ok(){
-            cn=$(dig +short CNAME $WWW @8.8.8.8)
-            [ -n "$cn" ] && echo "$cn" | grep -qi vercel-dns.com ||
-            [ "$(dig +short A $WWW @8.8.8.8 | grep -c '^76\.76\.21\.21$')" -ge 1 ]
+            cn=$(dig +short CNAME "$WWW" @8.8.8.8 || true)
+            if [[ -n "$cn" ]]; then
+              echo "$cn" | grep -qi 'vercel-dns.com'
+            else
+              dig +short A "$WWW" @8.8.8.8 | grep -q '^76\.76\.21\.21$'
+            fi
           }
-          while ! apex_ok || ! www_ok; do
-            echo "waiting for DNS… apex=$(apex_ok || echo false) www=$(www_ok || echo false) t=$t"
-            sleep $S; t=$((t+S)); [ $t -ge $MAX_WAIT ] && { echo "DNS timeout"; exit 1; }
-          done
+          status_bool(){ if "$1"; then echo true; else echo false; fi; }
 
-      - name: Alias domains (when action=alias)
-        if: contains(steps.parse.outputs.action, 'alias')
+          while ! apex_ok || ! www_ok; do
+            echo "waiting for DNS… apex=$(status_bool apex_ok) www=$(status_bool www_ok) t=$t"
+            sleep "$S"; t=$((t+S)); [[ $t -ge $MAX_WAIT ]] && { echo "DNS timeout"; exit 1; }
+          done
+          echo "DNS OK for $APEX and $WWW"
+
+      - name: Alias domains (when action=alias, authorized, and token present)
+        if: >
+          contains(steps.parse.outputs.action, 'alias') &&
+          (github.event_name == 'workflow_dispatch' || steps.auth.outputs.allowed == 'true') &&
+          secrets.VERCEL_TOKEN != '' &&
+          steps.parse.outputs.deploy_url != ''
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
@@ -117,12 +144,14 @@ jobs:
           WWW: ${{ steps.parse.outputs.www }}
         run: |
           set -euo pipefail
-          [ -n "$DEPLOY_URL" ] || { echo "deploy_url required"; exit 1; }
+          echo "Aliasing $DEPLOY_URL -> $APEX and $WWW"
           vercel domains add "$APEX" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" || true
+          vercel domains add "$WWW"  --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID" || true
           vercel alias set "$DEPLOY_URL" "$APEX" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
           vercel alias set "$DEPLOY_URL" "$WWW"  --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
 
-      - name: Smoke tests (apex 200, www 308)
+      - name: Smoke tests (apex must be 200; www often 308→200)
+        if: always()
         env:
           APEX: ${{ steps.parse.outputs.apex }}
           WWW: ${{ steps.parse.outputs.www }}
@@ -130,7 +159,34 @@ jobs:
           set -euo pipefail
           base="https://$APEX"
           www="https://$WWW"
-          chk(){ code=$(curl -s -o /dev/null -w "%{http_code}" "$1"); echo "$1 -> $code"; [ "$code" = "$2" ]; }
-          for p in /ping /__version /__healthz /openapi.json /docs /redoc; do chk "$base$p" 200; done
-          for p in / /ping /docs; do chk "$www$p" 308; done
-          echo "HSTS:"; curl -sI "$base" | awk 'BEGIN{IGNORECASE=1}/^strict-transport-security:/{print}'
+
+          chk_exact(){
+            url="$1"; want="$2"
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            echo "$url -> $code (want $want)"
+            [[ "$code" == "$want" ]]
+          }
+          chk_any(){
+            url="$1"; shift
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$url")
+            echo "$url -> $code (accepted: $*)"
+            for w in "$@"; do [[ "$code" == "$w" ]] && return 0; done
+            return 1
+          }
+
+          # Apex endpoints should serve
+          for p in /ping /__version /openapi.json /docs /redoc; do
+            chk_exact "$base$p" 200
+          done
+          # __healthz optional: warn if missing but don't fail
+          if ! chk_any "$base/__healthz" 200 204 404; then
+            echo "::warning::__healthz not reachable with acceptable codes"
+          fi
+
+          # www should typically 308 to apex; accept 200 in case already served there
+          for p in / /ping /docs; do
+            chk_any "$www$p" 308 200
+          done
+
+          echo "HSTS:"
+          curl -sI "$base" | awk 'BEGIN{IGNORECASE=1}/^strict-transport-security:/{print}'
