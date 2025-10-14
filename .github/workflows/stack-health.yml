@@ -31,17 +31,19 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: stack-health
   cancel-in-progress: true
 
-jobs:
-  health:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+  jobs:
+    health:
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
 
       - name: Install deps
         run: |
@@ -82,7 +84,8 @@ jobs:
           retention-days: 7
 
       - name: Open or update failure issue
-        if: ${{ steps.run.outputs.had_failures == 'true' }}
+        # Skip mutating repo state on forked PRs or restricted tokens
+        if: ${{ steps.run.outputs.had_failures == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/github-script@v7
         env:
           BASE: ${{ inputs.base }}
@@ -138,7 +141,8 @@ jobs:
             }
 
       - name: Close failure issue if passing
-        if: ${{ steps.run.outputs.had_failures == 'false' }}
+        # Skip mutating repo state on forked PRs or restricted tokens
+        if: ${{ steps.run.outputs.had_failures == 'false' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: actions/github-script@v7
         env:
           BASE: ${{ inputs.base }}

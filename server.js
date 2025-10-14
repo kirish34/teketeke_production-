@@ -83,7 +83,18 @@ app.use(compression());
 app.use(
   helmet({
     crossOriginEmbedderPolicy: false,
-    contentSecurityPolicy: false, // route-scoped CSP is applied to docs only
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "default-src": ["'self'"],
+        "object-src": ["'none'"],
+        "base-uri": ["'self'"],
+        "frame-ancestors": ["'none'"],
+        // empty array is allowed; helmet will emit the directive
+        "upgrade-insecure-requests": [],
+      },
+    },
+    referrerPolicy: { policy: 'no-referrer' },
   })
 );
 
@@ -99,7 +110,7 @@ app.use(async (_req, _res, next) => {
 
 // CORS
 const allowlist = [APP_URL, API_URL]
-  .concat((process.env.CORS_ORIGIN || '').split(','))
+  .concat((process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '').split(','))
   .map((s) => (s || '').trim())
   .filter(Boolean);
 
@@ -222,7 +233,7 @@ app.use('/api/admin', adminLimiter);
 // =======================
 // Health / meta
 // =======================
-app.get('/ping', (_req, res) => res.send('pong'));
+app.get('/ping', (_req, res) => res.json({ ok: true }));
 app.get('/health', (_req, res) => res.json({ ok: true, env: NODE_ENV, time: new Date().toISOString() }));
 app.get('/__health', (_req, res) => {
   return res.json({

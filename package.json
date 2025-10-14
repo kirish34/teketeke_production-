@@ -4,7 +4,7 @@
     "license":  "MIT",
     "type":  "commonjs",
     "main":  "server.js",
-    "scripts":  {
+  "scripts":  {
                     "dev":  "cross-env NODE_ENV=development node server.js",
                     "start":  "cross-env NODE_ENV=production node server.js",
                     "start:pretty":  "cross-env PRETTY_LOGS=1 node server.js",
@@ -16,7 +16,13 @@
                     "perf:load":  "k6 run scripts/k6-load.js",
                     "perf:smoke":  "cross-env MODE=smoke k6 run scripts/k6-load.js",
                     "perf:spike":  "cross-env MODE=spike k6 run scripts/k6-load.js",
-                    "check:pkg":  "bash scripts/check-package-json.sh"
+                    "check:pkg":  "bash scripts/check-package-json.sh",
+                    "lint": "eslint .",
+                    "lint:fix": "eslint . --fix",
+                    "format": "prettier -w .",
+                    "db:migrate": "psql $DATABASE_URL -f ./supabase/teketeke.sql",
+                    "db:seed": "psql $DATABASE_URL -f ./supabase/seeds/dev_seed.sql",
+                    "test": "node -e \"console.log('ok')\""
                 },
     "dependencies":  {
                          "@supabase/supabase-js":  "^2.45.0",

@@ -171,37 +171,62 @@ create table if not exists ussd_pool (
 );
 
 -- Format/consistency guards
-alter table ussd_pool
-  add constraint if not exists ussd_base_format
-  check (base ~ '^[0-9]{3}$' and base <> '000');
+DO $$
+BEGIN
+  ALTER TABLE ussd_pool
+    ADD CONSTRAINT ussd_base_format
+    CHECK (base ~ '^[0-9]{3}$' AND base <> '000');
+EXCEPTION
+  WHEN duplicate_object THEN
+    -- already exists
+    NULL;
+END $$;
 
-alter table ussd_pool
-  add constraint if not exists ussd_checksum_format
-  check (checksum ~ '^[1-9]$');
+DO $$
+BEGIN
+  ALTER TABLE ussd_pool
+    ADD CONSTRAINT ussd_checksum_format
+    CHECK (checksum ~ '^[1-9]$');
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
 -- checksum must equal digital-root of the 3 digits in base
-alter table ussd_pool
-  add constraint if not exists ussd_checksum_matches_base
-  check (
-    (checksum)::int = (
-      (( (substring(base from 1 for 1)::int
-        + substring(base from 2 for 1)::int
-        + substring(base from 3 for 1)::int) - 1) % 9) + 1
-    )
-  );
+DO $$
+BEGIN
+  ALTER TABLE ussd_pool
+    ADD CONSTRAINT ussd_checksum_matches_base
+    CHECK (
+      (checksum)::int = (
+        (((substring(base from 1 for 1)::int
+         +  substring(base from 2 for 1)::int
+         +  substring(base from 3 for 1)::int) - 1) % 9) + 1
+      )
+    );
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
 -- keep allocation fields in sync
-alter table ussd_pool
-  add constraint if not exists ussd_allocated_fields
-  check (
-    (allocated = false and level is null and sacco_id is null and matatu_id is null and cashier_id is null)
-    or
-    (allocated = true and (
-        (level = 'SACCO'   and sacco_id  is not null and matatu_id is null and cashier_id is null) or
-        (level = 'MATATU'  and matatu_id is not null and sacco_id  is null and cashier_id is null) or
-        (level = 'CASHIER' and cashier_id is not null and sacco_id is null and matatu_id is null)
-    ))
-  );
+DO $$
+BEGIN
+  ALTER TABLE ussd_pool
+    ADD CONSTRAINT ussd_allocated_fields
+    CHECK (
+      (allocated = false AND level IS NULL AND sacco_id IS NULL AND matatu_id IS NULL AND cashier_id IS NULL)
+      OR
+      (allocated = true AND (
+          (level = 'SACCO'   AND sacco_id  IS NOT NULL AND matatu_id IS NULL AND cashier_id IS NULL) OR
+          (level = 'MATATU'  AND matatu_id IS NOT NULL AND sacco_id  IS NULL AND cashier_id IS NULL) OR
+          (level = 'CASHIER' AND cashier_id IS NOT NULL AND sacco_id IS NULL AND matatu_id IS NULL)
+      ))
+    );
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
 -- helpful indexes
 create index if not exists ussd_pool_alloc_idx on ussd_pool(allocated, allocated_at desc);
